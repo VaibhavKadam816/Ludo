@@ -172,11 +172,7 @@ function connect() {
   };
   net.onPeerLeave = peer => {
     if (audios[peer]) { audios[peer].srcObject = null; delete audios[peer]; }
-    if (!isHost && peer === hostPeer) {
-      hostGone = true; if (st) render();
-      // Rejoin with a fresh connection: a stale one can't reach a host who refreshed their page.
-      net.leave(); setTimeout(connect, 1500);
-    }
+    if (!isHost && peer === hostPeer) lostHost();
   };
   // Host: apply a guest's action and send everyone the new state.
   actMsg.onMessage = (a, { peerId }) => {
@@ -187,7 +183,7 @@ function connect() {
   // Guest: state from the host. The first one (before we're a player) is the host saying hello: ask to join.
   stateMsg.onMessage = (s, { peerId }) => {
     if (isHost) return;
-    hostPeer = peerId; hostGone = false;
+    hostPeer = peerId; hostGone = false; lastHeard = Date.now();
     if (s.me < 0) return void actMsg.send({ type: 'join', id, name: myName() }, { target: peerId });
     queue = queue.then(() => apply(s));
   };
@@ -199,13 +195,31 @@ function connect() {
   };
 }
 
-// Host: save the game (so a refresh resumes it) and send every connected player their view.
-function share() {
-  store(hostKey(room), JSON.stringify(g));
+// Host: send every connected player their view. Also repeated every 8 s as a heartbeat.
+function sendViews() {
   const live = livePeers();
   for (const p of g.players) if (p.id !== id && live.includes(p.peer)) stateMsg.send(view(g, p.id), { target: p.peer });
+}
+// Host: save the game (so a refresh resumes it), send it out, and show it here.
+function share() {
+  store(hostKey(room), JSON.stringify(g));
+  sendViews();
   queue = queue.then(() => apply(view(g, id)));
 }
+
+// Guest: a dropped connection can't be reused (the host still holds the old one under our id),
+// so reload the page: it rejoins with a fresh connection, straight back into our seat.
+let lastHeard = 0, reloading = false;
+function lostHost() {
+  if (reloading || st?.over || st?.winner != null) return; // game finished: nothing to come back to
+  reloading = hostGone = true;
+  if (st) render();
+  setTimeout(() => location.reload(), 1500);
+}
+setInterval(() => {
+  if (isHost && g) sendViews();
+  else if (st && Date.now() - lastHeard > 20000) lostHost(); // silent drop, e.g. a phone that slept
+}, 8000);
 
 function act(a) {
   if (isHost) { try { handle(g, id, a, selfId); share(); } catch (e) { alert(e); } return; }
@@ -369,7 +383,8 @@ function noise(dur, freq, at = 0, gain = .9) {
 const SFX = {
   step: k => tone(520 + k * 35, .09, { type: 'triangle', gain: .4 }),
   back: k => tone(900 - k * 12, .05, { type: 'square', gain: .08 }),
-  roll() { for (let k = 0; k < 9; k++) noise(.05, 1200 + Math.random() * 2500, k * .065 + Math.random() * .02); },
+  // Soft wooden clicks that slow down and fade as the die settles.
+  roll() { for (let k = 0, at = 0; k < 7; k++, at += .05 + k * .018) tone(260 + Math.random() * 120, .06, { type: 'triangle', at, gain: .22 - k * .025 }); },
   out: () => tone(300, .25, { type: 'triangle', to: 900, gain: .3 }),
   six() { [784, 1047, 1319].forEach((f, k) => tone(f, .15, { at: k * .07, gain: .2, type: 'triangle' })); },
   turn() { tone(660, .15, { gain: .25 }); tone(880, .3, { at: .15, gain: .25 }); },
@@ -438,6 +453,8 @@ async function apply(s) {
     face(s.dice);
     $('msg').textContent = s.msg;
     if (s.dice === 6) { SFX.six(); say('SIX!', '#ffc107', 300, 300, 1.3); }
+    // Auto-move arrives together with the roll: let everyone see the number for a second first.
+    if (prev.started && s.tokens.some((t, c) => t?.some((p, i) => p > (prev.tokens[c]?.[i] ?? p)))) await sleep(1000);
   }
   if (prev?.started && s.started) {
     const T = 13 * s.n - 2, victims = [];

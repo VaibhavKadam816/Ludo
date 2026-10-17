@@ -39,6 +39,20 @@ const counts = [0, 0, 0, 0, 0, 0];
 for (let k = 0; k < 6000; k++) { r.turn = 0; r.rolled = false; r.tokens[0] = [-1, -1, -1, -1]; handle(r, 'a', { type: 'roll' }); counts[r.dice - 1]++; }
 assert(counts.every(n => n > 850 && n < 1150), counts.join());
 
+// never three sixes in a row; the count resets on a new turn
+let maxRun = 0, run = 0;
+for (let k = 0; k < 3000; k++) {
+  r.rolled = false; r.tokens[0] = [-1, -1, -1, -1];
+  if (r.turn !== 0) { r.turn = 0; r.sixes = 0; run = 0; }
+  handle(r, 'a', { type: 'roll' });
+  run = r.dice === 6 ? run + 1 : 0; maxRun = Math.max(maxRun, run);
+  if (r.dice !== 6) { r.turn = 0; r.sixes = 0; run = 0; }
+}
+assert.equal(maxRun, 2);
+
+// the host's own view is a copy: changing the game afterwards doesn't change it
+const before = view(r, 'a'); r.tokens[0][0] = 42; assert.notEqual(before.tokens[0][0], 42);
+
 // auto-move + leave
 do { r.turn = 0; r.rolled = false; r.tokens[0] = [10, -1, -1, -1]; handle(r, 'a', { type: 'roll' }); } while (r.dice === 6);
 assert.equal(r.tokens[0][0], 10 + r.dice);                 // single choice moved automatically

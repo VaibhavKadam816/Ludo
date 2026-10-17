@@ -10,11 +10,11 @@ export const legal = (g, c, i) => {
   return p === -1 ? g.dice === 6 : p + g.dice <= last(g) + 6;
 };
 
-// Uniform 1-6 from the browser's crypto RNG.
-const rollDie = () => {
-  const b = new Uint32Array(1);
-  do crypto.getRandomValues(b); while (b[0] >= 4294967292);
-  return b[0] % 6 + 1;
+// Uniform 1..max from the browser's crypto RNG.
+const rollDie = (max = 6) => {
+  const b = new Uint32Array(1), limit = 2 ** 32 - 2 ** 32 % max;
+  do crypto.getRandomValues(b); while (b[0] >= limit);
+  return b[0] % max + 1;
 };
 
 // bonus: the mover earns another roll (six, capture, or reaching home). captured: tokens sent home.
@@ -34,6 +34,7 @@ export function move(g, c, i) {
 
 function pass(g) {
   g.rolled = false;
+  g.sixes = 0;
   do g.turn = (g.turn + 1) % g.players.length; while (g.players[g.turn].left);
 }
 
@@ -96,7 +97,8 @@ export function handle(g, id, a, peer) {
   const c = g.players[me].color;
   if (a.type === 'roll') {
     if (g.rolled) throw 'Already rolled';
-    g.dice = rollDie();
+    g.dice = rollDie(g.sixes >= 2 ? 5 : 6); // never more than two sixes in a row
+    g.sixes = g.dice === 6 ? (g.sixes || 0) + 1 : 0;
     g.rolled = true;
     g.rolls++;
     g.msg = `${g.players[me].name} rolled ${g.dice}`;
@@ -113,5 +115,6 @@ export function handle(g, id, a, peer) {
 // ponytail: no three-sixes rule, no blockades, no turn timeout for players who walk away without pressing Exit
 
 // What one player is allowed to see: everything except the other players' secret ids.
-export const view = (g, id) => ({ ...g, me: g.players.findIndex(p => p.id === id),
+// tokens are copied so the host's own screen can compare old and new positions to animate moves.
+export const view = (g, id) => ({ ...g, tokens: g.tokens.map(t => t && [...t]), me: g.players.findIndex(p => p.id === id),
   players: g.players.map(p => ({ name: p.name, color: p.color, voice: p.voice, left: !!p.left, captures: p.captures, peer: p.peer })) });
