@@ -12,9 +12,11 @@ Ad-free online Ludo for 2–6 friends, running entirely on GitHub Pages. No serv
   after more than 5 timed-out turns a player is removed (except the host, whose browser runs the game).
 - Never more than two sixes in a row. A player stuck with every pawn in the yard is guaranteed a 6 on their 7th turn.
 - The game plays on after the winner: players finish 1st, 2nd, 3rd… until only one is left.
+  Everyone then gets a scorecard with places, kills and how each player's game ended.
+- During a game each player's screen takes on their own base color, and the die is grey except on your turn.
 - Name tags on each base show the player and their kills; other players' tags also have an emoji button (the emoji flies to them)
   and, when they're in voice chat, a mute button for their voice.
-- 20 emojis to react with during the game (sent live, never saved).
+- 20 emojis to send from another player's name tag during the game (sent live, never saved).
 - Voice chat: mute your mic, mute any player, leave voice, or exit the game.
 - Stats (games, wins, captures, time played, recent games) are saved on each player's own device.
 

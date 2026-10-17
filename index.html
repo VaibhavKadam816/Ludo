@@ -37,7 +37,6 @@
   #msg { color: var(--soft); min-height: 20px; }
   .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; box-shadow: 0 0 0 2px #fff; }
   #bar { position: sticky; bottom: 12px; z-index: 1; display: flex; align-items: center; gap: 16px; }
-  .emo { width: 56px; height: 56px; padding: 0; border-radius: 50%; font-size: 28px; background: #ffffff26; box-shadow: none; }
   #emojis { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: 300px;
             display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 10px; border-radius: 18px;
             background: #2a1d6b; border: 1px solid #ffffff33; box-shadow: 0 10px 30px #0008; }
@@ -89,6 +88,11 @@
   /* emojis are page text, not canvas drawings, so every phone shows them in full color */
   .fly { position: absolute; transform: translate(-50%, -50%); font-size: 38px; line-height: 1; pointer-events: none;
          font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+  .overlay { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; padding: 16px; background: #0009; }
+  .scorecard { width: min(100%, 440px); background: #2a1d6b; box-shadow: 0 20px 60px #000a; }
+  .scorecard h2 { font-size: 24px; color: #ffc107; text-align: center; }
+  .scorecard td:first-child { font-size: 20px; width: 36px; }
+  .scorecard tr.me td { font-weight: 800; color: #ffc107; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -151,7 +155,6 @@
   <div id="boardwrap"><canvas id="c" aria-label="Ludo board"></canvas><div id="tags"></div><div id="fx"></div></div>
   <div id="bar">
     <button id="die" class="die" aria-label="Roll the die"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></button>
-    <button id="emo" class="emo" aria-label="Send an emoji" aria-expanded="false">😊</button>
     <div id="emojis" class="hidden" role="menu"></div>
   </div>
 </section>
@@ -169,6 +172,14 @@
   </div>
 </div>
 
+<div id="score" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="scoretitle">
+  <div class="card scorecard">
+    <h2 id="scoretitle">🏆 Final scores</h2>
+    <p class="hint" id="scoremeta"></p>
+    <table><thead><tr><th>#</th><th>Player</th><th>💥 Kills</th><th>Result</th></tr></thead><tbody id="scorerows"></tbody></table>
+    <div class="pair"><button id="scoreboard" class="ghost">View board</button><button id="scorehome">Back to home</button></div>
+  </div>
+</div>
 <div id="flash"></div>
 <script type="module">
 // Peer-to-peer: the host's browser runs the rules (game.js) and sends each player their view of the game.
@@ -648,19 +659,25 @@ async function apply(s) {
   if (s.players[s.me]?.kicked) { alert('You were removed from the game for missing too many turns.'); return goHome(); }
   if (ready(s) && !ready(prev)) { SFX.turn(); pulseUntil = performance.now() + 15000; }
   if (s.started && s.done) recordGame(s, placeResult(s.players[s.me]?.place));
+  if (s.started && (s.done || s.over) && !(prev?.done || prev?.over)) setTimeout(showScore, prev ? 1500 : 0); // after the celebrations
   else if (s.over) recordGame(s, 'ended');
   if (s.players[s.me]?.voice && !inVoice) act({ type: 'voice', on: false }); // a refresh dropped our voice connection
   render();
 }
 
+// Grey unless it's your turn; then it takes your color.
 function paintDie(turn) {
-  const c = st?.players[turn]?.color ?? 0;
-  $('die').style.background = `linear-gradient(160deg, ${COL[c]}, ${DARK[c]})`;
+  const c = st?.players[st.me]?.color;
+  $('die').style.background = turn === st?.me && c != null && !st.done ? `linear-gradient(160deg, ${COL[c]}, ${DARK[c]})` : 'linear-gradient(160deg, #c3c0cf, #8d899c)';
 }
 
 function render() {
   show('connecting', false);
   show('panel', true);
+  show('people', !st.started); // in the game, the name tags on each base say who's who
+  const mc = st.started ? st.players[st.me]?.color : null;
+  document.body.style.setProperty('--bg1', mc != null ? shade(COL[mc], .62) : '');
+  document.body.style.setProperty('--bg2', mc != null ? shade(COL[mc], .2) : '');
   show('lobby', !st.started);
   show('game', st.started);
   $('people').replaceChildren(...st.players.map((p, j) => {
@@ -744,15 +761,39 @@ function sendEmoji(e) {
   showEmoji(st.me, e, emojiTo);
   emojiMsg.send({ e, to: emojiTo });
 }
-const pickEmojis = open => { show('emojis', open); $('emo').setAttribute('aria-expanded', open); };
+const pickEmojis = open => show('emojis', open);
 $('emojis').replaceChildren(...EMOJIS.map(e => {
   const b = Object.assign(document.createElement('button'), { textContent: e });
   b.setAttribute('role', 'menuitem');
   b.onclick = () => { pickEmojis(false); sendEmoji(e); };
   return b;
 }));
-$('emo').onclick = ev => { ev.stopPropagation(); emojiTo = null; pickEmojis($('emojis').classList.contains('hidden')); };
 addEventListener('click', ev => { if (!$('emojis').contains(ev.target)) pickEmojis(false); });
+
+// ---------- scorecard when the game ends ----------
+function showScore() {
+  const T = 13 * st.n - 2, mins = Math.max(1, Math.round((Date.now() - st.startedAt) / 60000));
+  const order = [...st.places, ...st.players.map((p, j) => j).filter(j => !st.players[j].place)]; // finishers first, then the rest
+  $('scoretitle').textContent = st.done ? '🏆 Final scores' : 'Game ended';
+  $('scoremeta').textContent = `${mins} min game · room ${room}` + (st.done ? '' : ' · the host ended it early');
+  $('scorerows').replaceChildren(...order.map(j => {
+    const p = st.players[j], home = st.tokens[p.color]?.filter(t => t === T + 6).length ?? 0;
+    const result = p.kicked ? 'Removed' : p.left ? 'Left' : home === 4 ? 'All home' : `${home}/4 home`;
+    const tr = document.createElement('tr');
+    tr.className = j === st.me ? 'me' : '';
+    const who = document.createElement('td'), dot = Object.assign(document.createElement('span'), { className: 'dot' });
+    dot.style.background = COL[p.color]; dot.style.marginRight = '6px';
+    who.append(dot, p.name + (j === st.me ? ' (you)' : ''));
+    tr.append(Object.assign(document.createElement('td'), { textContent: p.place ? medal(p.place) : '–' }), who,
+      Object.assign(document.createElement('td'), { textContent: p.captures }), Object.assign(document.createElement('td'), { textContent: result }));
+    return tr;
+  }));
+  show('score', true);
+  $('scorehome').focus();
+}
+$('scoreboard').onclick = () => show('score', false);
+$('scorehome').onclick = () => { leaveVoice(); goHome(); };
+addEventListener('keydown', e => { if (e.key === 'Escape') show('score', false); });
 
 // ---------- name tags on each base ----------
 // Mine: name + kill count. Others': name, kill count, an emoji button aimed at them, and (in voice chat) a mute button.
