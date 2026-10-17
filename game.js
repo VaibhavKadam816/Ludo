@@ -32,6 +32,13 @@ export function move(g, c, i) {
   return { bonus: g.dice === 6 || p === T + 6 || captured > 0, captured };
 }
 
+export const TURN_MS = 30000;
+const GRACE_MS = 3000;   // covers the move animation everyone watches before the clock means anything
+export const MAX_IDLE = 5; // timed-out turns allowed; one more and the player is removed
+
+// Every time the game waits on the current player, they get a fresh 30 s.
+const arm = g => { g.deadline = Date.now() + TURN_MS + GRACE_MS; };
+
 function pass(g) {
   g.rolled = false;
   g.sixes = 0;
@@ -54,13 +61,45 @@ function startGame(g) {
   g.players.forEach((p, i) => { p.color = colors[i]; g.tokens[p.color] = [-1, -1, -1, -1]; });
   g.started = true;
   g.startedAt = Date.now();
+  arm(g);
+}
+
+// Take a player out of a running game: their pawns leave the board and their turns are skipped.
+function remove(g, me, msg) {
+  const p = g.players[me];
+  Object.assign(p, { left: true, voice: false });
+  g.tokens[p.color] = null;
+  g.msg = msg;
+  const active = g.players.filter(p => !p.left);
+  if (active.length <= 1) { if (g.winner == null && active.length) g.winner = g.players.indexOf(active[0]); }
+  else if (g.turn === me && g.winner == null) { pass(g); arm(g); }
+}
+
+// Host calls this every second. When the current player's time is up, play for them:
+// roll, then move the first legal pawn. Too many timeouts and a guest is removed for good.
+export function tick(g, now = Date.now()) {
+  if (!g.started || g.winner != null || g.over || !(now >= g.deadline)) return false;
+  const me = g.turn, p = g.players[me];
+  p.idle = (p.idle || 0) + 1;
+  if (p.idle > MAX_IDLE && me !== 0) { // never the host: their browser runs the game
+    p.kicked = true;
+    remove(g, me, `${p.name} was removed for not playing`);
+    return true;
+  }
+  if (!g.rolled) handle(g, p.id, { type: 'roll' }, undefined, true);
+  if (g.rolled && g.turn === me && g.winner == null) {
+    const i = [0, 1, 2, 3].find(i => legal(g, p.color, i));
+    handle(g, p.id, { type: 'move', token: i }, undefined, true);
+  }
+  g.msg += ' (time ran out)';
+  return true;
 }
 
 export const newGame = expected => ({ expected: Math.min(6, Math.max(2, expected | 0 || 4)), players: [], started: false, n: 4,
   turn: 0, dice: null, rolled: false, rolls: 0, tokens: [], winner: null, over: false, msg: '' });
 
 // Apply one player's action to the game, or throw a message for that player.
-export function handle(g, id, a, peer) {
+export function handle(g, id, a, peer, auto = false) {
   if (!a || typeof a.type !== 'string' || typeof id !== 'string' || !id || id.length > 64) throw 'Bad request';
   const me = g.players.findIndex(p => p.id === id);
   if (me >= 0 && peer) g.players[me].peer = peer; // the player may have reconnected with a new connection
@@ -78,13 +117,7 @@ export function handle(g, id, a, peer) {
     if (!g.started) return void g.players.splice(me, 1);
     const p = g.players[me];
     if (p.left) return;
-    Object.assign(p, { left: true, voice: false });
-    g.tokens[p.color] = null;
-    g.msg = `${p.name} left the game`;
-    const active = g.players.filter(p => !p.left);
-    if (active.length <= 1) { if (g.winner == null && active.length) g.winner = g.players.indexOf(active[0]); }
-    else if (g.turn === me && g.winner == null) pass(g);
-    return;
+    return remove(g, me, `${p.name} left the game`);
   }
   if (a.type === 'start') {
     if (me !== 0) throw 'Only the host can start';
@@ -95,6 +128,7 @@ export function handle(g, id, a, peer) {
   if (!g.started || g.winner != null || g.over) throw 'Game not running';
   if (me !== g.turn) throw 'Not your turn';
   const c = g.players[me].color;
+  if (!auto) g.players[me].idle = 0; // they're here after all
   if (a.type === 'roll') {
     if (g.rolled) throw 'Already rolled';
     g.dice = rollDie(g.sixes >= 2 ? 5 : 6); // never more than two sixes in a row
@@ -111,10 +145,13 @@ export function handle(g, id, a, peer) {
     if (!g.rolled || !Number.isInteger(i) || i < 0 || i > 3 || !legal(g, c, i)) throw 'Illegal move';
     moveToken(g, me, c, i);
   } else throw 'Unknown action';
+  arm(g);
 }
-// ponytail: no three-sixes rule, no blockades, no turn timeout for players who walk away without pressing Exit
+// ponytail: no blockades
 
 // What one player is allowed to see: everything except the other players' secret ids.
 // tokens are copied so the host's own screen can compare old and new positions to animate moves.
-export const view = (g, id) => ({ ...g, tokens: g.tokens.map(t => t && [...t]), me: g.players.findIndex(p => p.id === id),
-  players: g.players.map(p => ({ name: p.name, color: p.color, voice: p.voice, left: !!p.left, captures: p.captures, peer: p.peer })) });
+// timeLeft rather than the deadline itself: players' clocks don't agree with the host's.
+export const view = (g, id) => ({ ...g, deadline: undefined, timeLeft: g.deadline ? Math.min(TURN_MS, g.deadline - Date.now()) : null,
+  tokens: g.tokens.map(t => t && [...t]), me: g.players.findIndex(p => p.id === id),
+  players: g.players.map(p => ({ name: p.name, color: p.color, voice: p.voice, left: !!p.left, kicked: !!p.kicked, idle: p.idle || 0, captures: p.captures, peer: p.peer })) });

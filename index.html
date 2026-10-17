@@ -36,7 +36,20 @@
   #status { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; min-height: 28px; }
   #msg { color: var(--soft); min-height: 20px; }
   .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; box-shadow: 0 0 0 2px #fff; }
-  #bar { position: sticky; bottom: 12px; z-index: 1; }
+  #bar { position: sticky; bottom: 12px; z-index: 1; display: flex; align-items: center; gap: 16px; }
+  .emo { width: 56px; height: 56px; padding: 0; border-radius: 50%; font-size: 28px; background: #ffffff26; box-shadow: none; }
+  #emojis { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: 300px;
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 10px; border-radius: 18px;
+            background: #2a1d6b; border: 1px solid #ffffff33; box-shadow: 0 10px 30px #0008; }
+  #emojis button { font-size: 28px; padding: 6px 0; background: none; box-shadow: none; }
+  #emojis button:hover { background: #ffffff1a; }
+  #timer { font-variant-numeric: tabular-nums; padding: 2px 10px; border-radius: 99px; background: #ffffff1f; font-size: 16px; }
+  #timer.low { background: #f0353f; animation: blink .5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .55; } }
+  #idlewarn { color: #ffc107; font-size: 14px; min-height: 0; text-align: center; }
+  #flash { position: fixed; inset: 0; pointer-events: none; background: #f0353f; opacity: 0; z-index: 5; }
+  #flash.on { animation: flash .9s ease-out; }
+  @keyframes flash { 0%, 30% { opacity: .55; } 15% { opacity: .15; } 100% { opacity: 0; } }
   .die { width: 88px; height: 88px; padding: 14px; background: #fff; border: 0; border-radius: 22px;
          display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 5px; box-shadow: 0 6px 0 #0005, 0 0 0 4px #fff inset; }
   .die i { border-radius: 50%; background: #fff; visibility: hidden; box-shadow: inset 0 -2px 0 #0003; }
@@ -115,10 +128,15 @@
 </section>
 
 <section id="game" class="hidden" style="width:auto">
-  <div id="status"><span id="tdot" class="dot"></span><span id="turn"></span></div>
+  <div id="status"><span id="tdot" class="dot"></span><span id="turn"></span><span id="timer" class="hidden"></span></div>
+  <div id="idlewarn"></div>
   <div id="msg"></div>
   <canvas id="c" aria-label="Ludo board"></canvas>
-  <div id="bar"><button id="die" class="die" aria-label="Roll the die"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></button></div>
+  <div id="bar">
+    <button id="die" class="die" aria-label="Roll the die"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></button>
+    <button id="emo" class="emo" aria-label="Send an emoji" aria-expanded="false">😊</button>
+    <div id="emojis" class="hidden" role="menu"></div>
+  </div>
 </section>
 
 <div id="panel" class="card hidden">
@@ -134,11 +152,12 @@
   </div>
 </div>
 
+<div id="flash"></div>
 <script type="module">
 // Peer-to-peer: the host's browser runs the rules (game.js) and sends each player their view of the game.
 // Players find each other through free public Nostr relays (via Trystero); the passcode encrypts that handshake.
 import { joinRoom, selfId } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm';
-import { newGame, handle, view } from './game.js';
+import { newGame, handle, view, tick, MAX_IDLE } from './game.js';
 
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -146,7 +165,7 @@ const show = (id, on) => $(id).classList.toggle('hidden', !on);
 const APP = 'ludo-vaibhavkadam816-p2p'; // our namespace on the public relays
 const id = localStorage.ludoId ||= [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
 let room = new URLSearchParams(location.search).get('room'), pass = null;
-let net, actMsg, stateMsg, errMsg, hostPeer = null, hostGone = false, isHost = false, g = null;
+let net, actMsg, stateMsg, errMsg, emojiMsg, hostPeer = null, hostGone = false, isHost = false, g = null;
 let st, disp, hits = [], queue = Promise.resolve(), busy = false, pulseUntil = 0, hop = null;
 
 // Bold game colors; DARK shades for pawn bodies and outlines.
@@ -164,7 +183,8 @@ function connect() {
   net = joinRoom({ appId: APP, password: pass }, room, {
     onJoinError: e => { console.warn('join error', e); $('connhint').textContent = 'Could not connect. Check the room number and passcode. If they are right, your network may be blocking direct connections; try Wi-Fi.'; },
   });
-  actMsg = net.makeAction('act'); stateMsg = net.makeAction('state'); errMsg = net.makeAction('err');
+  actMsg = net.makeAction('act'); stateMsg = net.makeAction('state'); errMsg = net.makeAction('err'); emojiMsg = net.makeAction('emoji');
+  emojiMsg.onMessage = (e, { peerId }) => { const j = st?.players.findIndex(p => p.peer === peerId); if (j >= 0) showEmoji(j, e); };
 
   net.onPeerJoin = peer => {
     if (isHost) stateMsg.send(view(g, ''), { target: peer }); // introduce ourselves as the host
@@ -216,6 +236,7 @@ function lostHost() {
   if (st) render();
   setTimeout(() => location.reload(), 1500);
 }
+setInterval(() => { if (isHost && g && tick(g)) share(); }, 1000); // host runs the turn clock
 setInterval(() => {
   if (isHost && g) sendViews();
   else if (st && Date.now() - lastHeard > 20000) lostHost(); // silent drop, e.g. a phone that slept
@@ -382,7 +403,20 @@ function noise(dur, freq, at = 0, gain = .9) {
 }
 const SFX = {
   step: k => tone(520 + k * 35, .09, { type: 'triangle', gain: .4 }),
-  back: k => tone(900 - k * 12, .05, { type: 'square', gain: .08 }),
+  // Rushing air: noise through a filter sweeping from high to low.
+  swoosh(ms) {
+    if (!live()) return;
+    const dur = ms / 1000, b = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate), d = b.getChannelData(0);
+    for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
+    const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(), t = AC.currentTime;
+    s.buffer = b; f.type = 'bandpass'; f.Q.value = 1.5;
+    f.frequency.setValueAtTime(2400, t); f.frequency.exponentialRampToValueAtTime(250, t + dur);
+    g.gain.setValueAtTime(.001, t); g.gain.exponentialRampToValueAtTime(.5, t + dur * .25); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+    s.connect(f).connect(g).connect(master); s.start(t);
+  },
+  ouch() { tone(523, .22, { type: 'triangle', gain: .3 }); tone(392, .45, { type: 'triangle', at: .22, gain: .3, to: 330 }); },
+  tick: () => tone(1000, .06, { type: 'square', gain: .06 }),
+  pop: () => tone(600, .12, { type: 'sine', to: 1100, gain: .15 }),
   // Soft wooden clicks that slow down and fade as the die settles.
   roll() { for (let k = 0, at = 0; k < 7; k++, at += .05 + k * .018) tone(260 + Math.random() * 120, .06, { type: 'triangle', at, gain: .22 - k * .025 }); },
   out: () => tone(300, .25, { type: 'triangle', to: 900, gain: .3 }),
@@ -422,6 +456,7 @@ function drawFX() {
     t.life -= .012; t.y -= .5;
     ctx.globalAlpha = Math.min(1, t.life * 2);
     ctx.font = `900 ${Math.round(42 * s)}px ui-rounded, system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (t.emoji) { t.y -= .9; ctx.fillText(t.text, t.x, t.y); continue; } // emojis: no outline, rise faster
     ctx.lineWidth = 8; ctx.strokeStyle = '#1b1147'; ctx.strokeText(t.text, t.x, t.y);
     ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y);
   }
@@ -433,9 +468,30 @@ const PIPS = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5
 const face = d => [...$('die').children].forEach((el, i) => el.classList.toggle('on', PIPS[d - 1].includes(i)));
 const ready = s => s?.started && s.winner == null && !s.over && !hostGone && s.turn === s.me && !s.rolled;
 
-async function walk(c, i, steps, ms, sound) {
-  for (const [k, p] of steps.entries()) { disp[c][i] = p; hop = { c, i, t: performance.now(), ms }; sound(k); await sleep(ms); }
-  hop = null;
+// A pawn in motion follows a path of canvas points; draw() places it along that path.
+const HOP_MS = 220, HOP_GAP = 60; // per square: an arc of 0.22 s, then a short rest
+async function hopTo(c, i, steps) {
+  for (const [k, p] of steps.entries()) {
+    hop = { c, i, pts: [at(c, disp[c][i], i), at(c, p, i)], t: performance.now(), ms: HOP_MS, lift: Z * .55 };
+    SFX.step(k);
+    await sleep(HOP_MS);
+    disp[c][i] = p; hop = null;
+    await sleep(HOP_GAP);
+  }
+}
+// Captured pawn: one smooth rush back over every square it travelled, then into its yard.
+async function swoosh(c, i, from) {
+  const pts = [...Array.from({ length: from + 1 }, (_, k) => at(c, from - k, i)), at(c, -1, i)];
+  const ms = Math.min(1500, 600 + from * 18);
+  hop = { c, i, pts, t: performance.now(), ms, lift: 0, trail: true };
+  SFX.swoosh(ms);
+  await sleep(ms);
+  disp[c][i] = -1; hop = null;
+}
+const ease = u => u < .5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2;
+function along(pts, u) {
+  const f = Math.max(0, Math.min(1, u)) * (pts.length - 1), k = Math.min(pts.length - 2, Math.floor(f)), r = f - k;
+  return [pts[k][0] + (pts[k + 1][0] - pts[k][0]) * r, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * r];
 }
 
 async function apply(s) {
@@ -465,23 +521,25 @@ async function apply(s) {
       if (a >= 0 && b === -1) victims.push({ c, i, a });
       if (b <= a) continue;
       if (a === -1) { disp[c][i] = 0; SFX.out(); burst(...at(c, 0, i), [COL[c], '#fff'], 16, 3); await sleep(250); continue; }
-      await walk(c, i, Array.from({ length: b - a }, (_, k) => a + 1 + k), 150, SFX.step);
+      await hopTo(c, i, Array.from({ length: b - a }, (_, k) => a + 1 + k));
       if (b === T + 6) { SFX.home(); burst(...at(c, b, i), COL, 50, 6); say('HOME!', COL[c], ...at(c, b, i)); await sleep(400); }
     }
-    // Captures: explosion, shake, then the victim marches all the way back to its yard.
+    // Captures: explosion and shake, then the captured pawn rushes back along its route to its yard.
+    // The player who lost it also gets their own sound and a red flash.
     for (const v of victims) {
       const [x, y] = at(v.c, v.a, v.i);
       SFX.capture(); FX.shake = 14;
       burst(x, y, [COL[v.c], DARK[v.c], '#fff', '#ffc107'], 60, 7);
-      say('CAPTURED!', '#fff', x, y - 20);
-      await sleep(450);
-      const ms = Math.max(22, Math.min(70, 1600 / (v.a + 1)));
-      await walk(v.c, v.i, [...Array.from({ length: v.a }, (_, k) => v.a - 1 - k), -1], ms, SFX.back);
+      if (v.c === s.players[s.me]?.color) { SFX.ouch(); $('flash').classList.remove('on'); void $('flash').offsetWidth; $('flash').classList.add('on'); }
+      await sleep(400);
+      await swoosh(v.c, v.i, v.a);
       burst(...at(v.c, -1, v.i), [COL[v.c], '#fff'], 14, 2);
     }
     if (s.winner != null && prev.winner == null) { SFX.win(); confetti(); say(`${s.players[s.winner].name} WINS!`, '#ffc107', 300, 280, 1.1); }
   }
   st = s; disp = s.tokens; busy = false;
+  if (s.timeLeft != null) turnEndsAt = performance.now() + s.timeLeft;
+  if (s.players[s.me]?.kicked) { alert('You were removed from the game for missing too many turns.'); return goHome(); }
   if (ready(s) && !ready(prev)) { SFX.turn(); pulseUntil = performance.now() + 15000; }
   if (s.started && s.winner != null) recordGame(s, s.winner === s.me ? 'won' : 'lost');
   else if (s.over) recordGame(s, 'ended');
@@ -536,7 +594,48 @@ function render() {
   face(st.dice || 6);
   paintDie(st.winner ?? st.turn);
   $('die').disabled = !ready(st);
+  const missed = st.players[st.me]?.idle || 0;
+  $('idlewarn').textContent = missed && !isHost ? `⚠️ You've missed ${missed} turn${missed > 1 ? 's' : ''}. Miss ${MAX_IDLE + 1 - missed} more in a row and you'll be removed.` : '';
 }
+
+// ---------- turn clock: countdown, last-5-seconds beeps, missed-turn warning ----------
+let turnEndsAt = 0, lastBeep = 0;
+setInterval(() => {
+  const on = st?.started && st.winner == null && !st.over && !hostGone;
+  show('timer', on);
+  if (!on) return;
+  const secs = Math.max(0, Math.ceil((turnEndsAt - performance.now()) / 1000));
+  $('timer').textContent = `⏱ ${secs}s`;
+  $('timer').classList.toggle('low', secs <= 5);
+  if (st.turn === st.me && secs <= 5 && secs > 0 && secs !== lastBeep) { lastBeep = secs; SFX.tick(); }
+}, 250);
+
+// ---------- emojis: sent straight to everyone, never stored ----------
+const EMOJIS = ['👋', '👍', '👏', '🎲', '🤞', '🙏', '🔥', '🚀', '🎉', '🥳', '😎', '😏', '😈', '😂', '😱', '🤯', '😤', '😡', '😭', '💀'];
+const lastEmojiFrom = {};
+function showEmoji(j, e) {
+  if (!EMOJIS.includes(e) || !st?.started || !YARDS) return;
+  const now = performance.now();
+  if (now - (lastEmojiFrom[j] || 0) < 1000) return; // ignore spam
+  lastEmojiFrom[j] = now;
+  const spots = YARDS[st.players[j].color].spots, x = px(spots.reduce((a, p) => a + p[0], 0) / 4), y = px(spots.reduce((a, p) => a + p[1], 0) / 4);
+  FX.texts.push({ text: e, emoji: true, x, y, life: 1, big: 1.5 });
+  SFX.pop();
+}
+const pickEmojis = open => { show('emojis', open); $('emo').setAttribute('aria-expanded', open); };
+$('emojis').replaceChildren(...EMOJIS.map(e => {
+  const b = Object.assign(document.createElement('button'), { textContent: e });
+  b.setAttribute('role', 'menuitem');
+  b.onclick = () => {
+    pickEmojis(false);
+    if (performance.now() - (lastEmojiFrom[st.me] || 0) < 1500) return;
+    showEmoji(st.me, e);
+    emojiMsg.send(e);
+  };
+  return b;
+}));
+$('emo').onclick = ev => { ev.stopPropagation(); pickEmojis($('emojis').classList.contains('hidden')); };
+addEventListener('click', ev => { if (!$('emojis').contains(ev.target)) pickEmojis(false); });
 
 // ---------- board geometry ----------
 // In cell units around the center. n arms sit on the sides of a regular n-gon (n=4 is the classic
@@ -661,7 +760,9 @@ function draw(now) {
   hits = [];
   const list = Object.values(groups).flatMap(g => g.map((k, j) => ({ ...k, n: g.length, j })));
   list.sort((a, b) => a.y - b.y); // draw back to front so pawns overlap naturally
+  let moving = null;
   for (const k of list) {
+    if (hop && hop.c === k.c && hop.i === k.i) { moving = k; continue; }
     let x = px(k.x) + (k.j - (k.n - 1) / 2) * Z * .34, y = px(k.y);
     const r = k.n > 1 ? Z * .42 : Z * .56;
     const movable = canMove && k.c === mine.color && (k.p === -1 ? st.dice === 6 : k.p + st.dice <= T + 6);
@@ -672,8 +773,16 @@ function draw(now) {
       hits.push({ x, y, i: k.i });
       y -= Math.abs(Math.sin(now / 200)) * Z * .18;
     }
-    if (hop && hop.c === k.c && hop.i === k.i) y -= Math.sin(Math.min(1, (now - hop.t) / hop.ms) * Math.PI) * Z * .45;
     pawn(x, y, r, k.c);
+  }
+  if (moving) {
+    const u = Math.min(1, (now - hop.t) / hop.ms), e = ease(u);
+    if (hop.trail) for (let q = 6; q >= 1; q--) { // fading ghosts behind the rushing pawn
+      const [gx, gy] = along(hop.pts, ease(Math.max(0, u - q * .035)));
+      ctx.globalAlpha = .35 * (1 - q / 7); circle(gx, gy, Z * .42, COL[moving.c]); ctx.globalAlpha = 1;
+    }
+    const [x, y] = along(hop.pts, e);
+    pawn(x, y - Math.sin(e * Math.PI) * hop.lift, Z * .56, moving.c);
   }
   drawFX();
 }

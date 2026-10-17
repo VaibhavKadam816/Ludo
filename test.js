@@ -1,6 +1,6 @@
 // Rule checks: node test.js
 import assert from 'node:assert';
-import { legal, move, newGame, handle, view } from './game.js';
+import { legal, move, newGame, handle, view, tick, MAX_IDLE } from './game.js';
 
 const g = { n: 4, dice: 6, tokens: [[-1, -1, -1, -1], null, [-1, -1, -1, -1], null] };
 assert(legal(g, 0, 0));
@@ -60,4 +60,25 @@ r.turn = 1; r.rolled = false; handle(r, 'b', { type: 'leave' });
 assert.equal(r.turn, 2); assert.equal(r.tokens[1], null);  // turn skips the leaver, tokens gone
 handle(r, 'c', { type: 'leave' }); assert.equal(r.winner, 0);
 assert.throws(() => handle(r, 'a', null), /Bad request/);
+
+// turn timer: nothing happens before the deadline; after it the host plays the turn for you
+const q = newGame(3);
+for (const x of ['h', 'g1', 'g2']) handle(q, x, { type: 'join', name: x });
+assert(!tick(q, Date.now()));                          // 30 s not up yet
+q.turn = 1; q.rolled = false; q.tokens[1] = [10, -1, -1, -1];
+assert(tick(q, q.deadline));
+assert.equal(q.players[1].idle, 1);
+assert(q.turn !== 1 || !q.rolled);                     // turn was played (moved or rolled again on a 6)
+assert.equal(view(q, 'g1').timeLeft <= 30000, true);
+handle(q, 'g1', { type: 'leave' }); q.players[1].left = false; q.tokens[1] = [10, -1, -1, -1]; // reset for the next check
+// acting yourself resets the idle count
+q.players[1].idle = 3; q.turn = 1; q.rolled = false; handle(q, 'g1', { type: 'roll' }); assert.equal(q.players[1].idle, 0);
+// more than MAX_IDLE timed-out turns: removed for good
+q.players[1].idle = MAX_IDLE; q.turn = 1; q.rolled = false;
+assert(tick(q, q.deadline + 1));
+assert(q.players[1].kicked && q.players[1].left); assert.equal(q.tokens[1], null); assert.equal(q.turn, 2);
+// the host is never removed, only auto-played
+q.players[0].idle = 99; q.turn = 0; q.rolled = false; tick(q, q.deadline + 1);
+assert(!q.players[0].left);
+
 console.log('ok');

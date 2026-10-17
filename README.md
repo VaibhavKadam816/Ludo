@@ -6,8 +6,12 @@ Ad-free online Ludo for 2–6 friends, running entirely on GitHub Pages. No serv
   The game starts by itself once everyone has joined; the host can also start early.
 - 2–4 players get the classic board; 5–6 players get a 5- or 6-armed board.
 - Moves with only one real choice are played automatically.
-- Effects: pawns hop square by square, captures explode and the captured pawn marches back to its yard,
-  plus banners for SIX, HOME and the winner, with sounds and a volume slider.
+- Effects: pawns hop square by square; a capture explodes and the captured pawn rushes back along its route to its yard
+  (its owner also hears an alert and their screen flashes), plus banners for SIX, HOME and the winner, with sounds and a volume slider.
+- 30 seconds per action, with a countdown. When time runs out the game plays the turn automatically;
+  after more than 5 timed-out turns a player is removed (except the host, whose browser runs the game).
+- Never more than two sixes in a row.
+- 20 emojis to react with during the game (sent live, never saved).
 - Voice chat: mute your mic, mute any player, leave voice, or exit the game.
 - Stats (games, wins, captures, time played, recent games) are saved on each player's own device.
 
