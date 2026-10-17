@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ludo</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #f4f4f6; color: #222;
+         display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  h1 { margin: 0; }
+  section { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  input, button { font: inherit; font-size: 18px; padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; width: 240px; box-sizing: border-box; }
+  button { background: #333; color: #fff; border: 0; cursor: pointer; }
+  button:disabled { opacity: .35; cursor: default; }
+  .or { color: #777; margin: 8px 0 0; }
+  .creds { font-size: 22px; text-align: center; line-height: 1.6; }
+  .creds b { font-family: ui-monospace, monospace; letter-spacing: 2px; }
+  canvas { width: min(92vw, 560px); aspect-ratio: 1; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0002; }
+  #status { font-size: 18px; display: flex; align-items: center; gap: 8px; min-height: 28px; }
+  #dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+  #bar { position: sticky; bottom: 12px; }
+  .die { width: 80px; height: 80px; padding: 12px; background: #fff; border: 4px solid #333; border-radius: 18px;
+         display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 4px; box-shadow: 0 5px 0 #0004; }
+  .die i { border-radius: 50%; background: #222; visibility: hidden; }
+  .die i.on { visibility: visible; }
+  .die:not(:disabled):hover { transform: translateY(-2px); }
+  .die.rolling { animation: roll .6s ease-out; }
+  @keyframes roll { 50% { transform: rotate(360deg) scale(1.25); } 100% { transform: rotate(720deg); } }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Ludo</h1>
+
+<section id="home">
+  <input id="name" placeholder="Your name" maxlength="20" aria-label="Your name">
+  <button id="create">Create room</button>
+  <p class="or">or join a friend's room</p>
+  <input id="code" placeholder="Room number" maxlength="5" autocapitalize="characters" aria-label="Room number">
+  <input id="pass" placeholder="Passcode" maxlength="6" inputmode="numeric" aria-label="Passcode">
+  <button id="join">Join room</button>
+</section>
+
+<section id="lobby" class="hidden">
+  <p>Share these with your friends (2–6 players):</p>
+  <div class="creds">Room number <b id="rcode"></b><br>Passcode <b id="rpass"></b></div>
+  <ul id="plist"></ul>
+  <button id="start">Start game</button>
+  <p id="wait" class="hidden">Waiting for the host to start…</p>
+</section>
+
+<section id="game" class="hidden">
+  <div id="status"><span id="dot"></span><span id="turn"></span></div>
+  <div id="msg"></div>
+  <canvas id="c" width="600" height="600" aria-label="Ludo board"></canvas>
+  <div id="bar"><button id="die" class="die" aria-label="Roll the die"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></button></div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+let room = new URLSearchParams(location.search).get('room');
+const id = localStorage.ludoId ||= [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+let st, hits = [], seen, anim = false;
+
+async function act(a, quiet) {
+  const r = await fetch('/act', { method: 'POST', body: JSON.stringify({ ...a, room, id }) });
+  if (!r.ok && !quiet) alert(await r.text());
+  return r.ok;
+}
+
+async function enter(pass, quiet) {
+  if (!await act({ type: 'join', name: $('name').value.trim(), pass }, quiet)) return;
+  localStorage.ludoName = $('name').value.trim();
+  history.replaceState(null, '', '?room=' + room);
+  $('home').classList.add('hidden');
+  new EventSource(`/events?room=${encodeURIComponent(room)}&id=${id}`).onmessage = e => onState(JSON.parse(e.data));
+}
+
+$('name').value = localStorage.ludoName || '';
+$('code').value = room || '';
+const needName = () => $('name').value.trim() || ($('name').focus(), false);
+$('create').onclick = async () => {
+  if (!needName()) return;
+  const r = await (await fetch('/new', { method: 'POST' })).json();
+  room = r.code;
+  enter(r.pass);
+};
+$('join').onclick = () => {
+  if (!needName()) return;
+  room = $('code').value.trim().toUpperCase();
+  enter($('pass').value.trim());
+};
+if (room) enter(undefined, true); // rejoin after a refresh
+
+$('start').onclick = () => act({ type: 'start' });
+$('die').onclick = () => act({ type: 'roll' });
+$('c').onclick = e => {
+  const b = e.target.getBoundingClientRect(), k = 600 / b.width;
+  const x = (e.clientX - b.left) * k, y = (e.clientY - b.top) * k;
+  const h = hits.find(h => Math.hypot(h.x - x, h.y - y) < Z * .6);
+  if (h) act({ type: 'move', token: h.i });
+};
+
+// Die face: pips in a 3x3 grid
+const PIPS = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
+const face = d => [...$('die').children].forEach((el, i) => el.classList.toggle('on', PIPS[d - 1].includes(i)));
+
+function onState(s) {
+  const newRoll = seen !== undefined && s.rolls !== seen;
+  seen = s.rolls; st = s;
+  if (!newRoll) return anim || render();
+  anim = true;
+  $('die').classList.add('rolling');
+  const spin = setInterval(() => face(1 + Math.floor(Math.random() * 6)), 80);
+  setTimeout(() => { clearInterval(spin); $('die').classList.remove('rolling'); anim = false; render(); }, 600);
+}
+
+// Board geometry, in cell units around the center. n arms sit on the sides of a regular n-gon
+// (n=4 is the classic square board). Each arm is 3 lanes wide and 6 cells long; yards fill the gaps.
+const COL = ['#e53935', '#43a047', '#f9c80e', '#1e88e5', '#8e24aa', '#fb8c00'];
+let N, Z, TRACK, HOME, YARD, YARDS, FIN, CENTER;
+function build(n) {
+  N = n;
+  const a = 1.5 / Math.tan(Math.PI / n), C = [...Array(n).keys()];
+  const ang = c => Math.PI + 2 * Math.PI * (c % n) / n;
+  const P = (c, d, v) => { const t = ang(c), ux = Math.cos(t), uy = Math.sin(t); return [ux * d - uy * v, uy * d + ux * v, t]; };
+  const cell = (c, r, v) => P(c, a + r + .5, v); // lane v: +1 inward, 0 home column, -1 outward
+  const end = (c, v) => P(c, a, v * 1.5);
+  TRACK = C.flatMap(c => [
+    ...[4, 3, 2, 1, 0].map(r => cell(c, r, 1)), ...[0, 1, 2, 3, 4, 5].map(r => cell(c + 1, r, -1)),
+    cell(c + 1, 5, 0), cell(c + 1, 5, 1)]);
+  HOME = C.map(c => [4, 3, 2, 1, 0].map(r => cell(c, r, 0)));
+  FIN = C.map(c => P(c, a / 2, 0));
+  CENTER = C.map(c => [[0, 0], end(c, -1), end(c, 1)]);
+  YARDS = C.map(c => {
+    const [ax, ay] = end(c, 1), e1 = P(c, 1, 0), e2 = P(c + 1, 1, 0), at = (s, k) => [ax + s * e1[0] + k * e2[0], ay + s * e1[1] + k * e2[1]];
+    const mid = n === 4 ? 3 : 3 / (1 + Math.sin(Math.PI / n)); // centre of the triangular yard's incircle
+    const s = n === 4 ? 1 : .6;
+    return { poly: n === 4 ? [at(0, 0), at(6, 0), at(6, 6), at(0, 6)] : [at(0, 0), at(6, 0), at(0, 6)],
+             spots: [[-s, -s], [s, -s], [-s, s], [s, s]].map(([p, q]) => at(mid + p, mid + q)) };
+  });
+  YARD = YARDS.map(y => y.spots);
+  const ext = Math.max(...YARDS.flatMap(y => y.poly.flat()).map(Math.abs), ...TRACK.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]).map(v => v + .75));
+  Z = 295 / ext;
+}
+const spot = (c, p, i) => {
+  const T = 13 * N - 2;
+  return p === -1 ? YARD[c][i] : p <= T ? TRACK[(p + 13 * c) % (13 * N)] : p <= T + 5 ? HOME[c][p - T - 1] : FIN[c];
+};
+
+const ctx = $('c').getContext('2d');
+const px = v => 300 + v * Z;
+function circle(x, y, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = fill; ctx.fill();
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function poly(pts, fill) {
+  ctx.beginPath(); pts.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](px(x), px(y)));
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+}
+function cell([x, y, t], fill) {
+  ctx.save(); ctx.translate(px(x), px(y)); ctx.rotate(t);
+  ctx.fillStyle = fill; ctx.fillRect(-Z / 2, -Z / 2, Z, Z);
+  ctx.strokeStyle = '#999'; ctx.lineWidth = 1; ctx.strokeRect(-Z / 2, -Z / 2, Z, Z);
+  ctx.restore();
+}
+
+function draw() {
+  if (N !== st.n) build(st.n);
+  ctx.clearRect(0, 0, 600, 600);
+  YARDS.forEach((y, c) => {
+    poly(y.poly, COL[c]);
+    y.spots.forEach(([x, y]) => circle(px(x), px(y), Z * .5, '#fff'));
+  });
+  HOME.forEach((h, c) => h.forEach(p => cell(p, COL[c])));
+  TRACK.forEach((p, k) => cell(p, k % 13 === 0 ? COL[k / 13] : '#fff'));
+  CENTER.forEach((t, c) => poly(t, COL[c]));
+  ctx.fillStyle = '#555'; ctx.font = `${Z * .6}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  TRACK.forEach(([x, y], k) => k % 13 === 8 && ctx.fillText('★', px(x), px(y)));
+
+  const mine = st.players[st.me], canMove = st.me === st.turn && st.rolled && st.winner == null, T = 13 * N - 2;
+  const groups = {};
+  st.tokens.forEach((t, c) => t && t.forEach((p, i) => {
+    const [x, y] = spot(c, p, i);
+    (groups[x.toFixed(2) + ',' + y.toFixed(2)] ||= []).push({ c, i, p, x, y });
+  }));
+  hits = [];
+  for (const g of Object.values(groups)) g.forEach((k, j) => {
+    const x = px(k.x) + (j - (g.length - 1) / 2) * Z * .3, y = px(k.y);
+    const movable = canMove && k.c === mine.color && (k.p === -1 ? st.dice === 6 : k.p + st.dice <= T + 6);
+    const r = g.length > 1 ? Z * .28 : Z * .35;
+    if (movable) circle(x, y, r + 5, '#fff', '#000', 3);
+    circle(x, y, r, COL[k.c], '#222', 2);
+    if (movable) hits.push({ x, y, i: k.i });
+  });
+}
+
+function render() {
+  $('lobby').classList.toggle('hidden', st.started);
+  $('game').classList.toggle('hidden', !st.started);
+  if (!st.started) {
+    $('rcode').textContent = room;
+    $('rpass').textContent = st.pass;
+    $('plist').replaceChildren(...st.players.map((p, i) =>
+      Object.assign(document.createElement('li'), { textContent: p.name + (i === 0 ? ' (host)' : '') + (i === st.me ? ' – you' : '') })));
+    $('start').classList.toggle('hidden', st.me !== 0);
+    $('start').disabled = st.players.length < 2;
+    $('wait').classList.toggle('hidden', st.me === 0);
+    return;
+  }
+  const p = st.players[st.winner ?? st.turn];
+  $('dot').style.background = COL[p.color];
+  $('turn').textContent = st.winner != null ? `${p.name} wins!` : `${p.name}'s turn` + (st.me === st.turn ? ' (you)' : '');
+  $('msg').textContent = st.msg;
+  face(st.dice || 6);
+  $('die').style.borderColor = COL[p.color];
+  $('die').disabled = !(st.me === st.turn && !st.rolled && st.winner == null);
+  draw();
+}
+</script>
+</body>
+</html>
