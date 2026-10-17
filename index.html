@@ -115,6 +115,7 @@
 <section id="connecting" class="hidden">
   <div class="count">Connecting…</div>
   <p class="hint" id="connhint">Looking for the host of room <b id="ccode"></b>.</p>
+  <p class="hint" id="connstat"></p>
   <button id="cancel" class="ghost">Cancel</button>
 </section>
 
@@ -125,6 +126,7 @@
   <div class="creds">Room <b id="rcode"></b><br>Passcode <b id="rpass"></b></div>
   <button id="start" class="ghost">Start now</button>
   <p class="hint" id="hostnote"></p>
+  <p class="hint" id="lobbystat"></p>
 </section>
 
 <section id="game" class="hidden" style="width:auto">
@@ -156,7 +158,7 @@
 <script type="module">
 // Peer-to-peer: the host's browser runs the rules (game.js) and sends each player their view of the game.
 // Players find each other through free public Nostr relays (via Trystero); the passcode encrypts that handshake.
-import { joinRoom, selfId } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm';
+import { joinRoom, selfId, getRelaySockets } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm';
 import { newGame, handle, view, tick, MAX_IDLE } from './game.js';
 
 const $ = id => document.getElementById(id);
@@ -179,9 +181,32 @@ const hostKey = code => 'ludoHost:' + code, passKey = code => 'ludoPass:' + code
 const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
 const livePeers = () => { const p = net?.getPeers() || {}; return p instanceof Map ? [...p.keys()] : Object.keys(p); };
 
-function connect() {
-  net = joinRoom({ appId: APP, password: pass }, room, {
-    onJoinError: e => { console.warn('join error', e); $('connhint').textContent = 'Could not connect. Check the room number and passcode. If they are right, your network may be blocking direct connections; try Wi-Fi.'; },
+// Relay (TURN) for networks that block direct connections, from a free Metered.ca account.
+// Fill in both to switch it on; leave them empty and players connect directly only.
+const METERED_APP = ''; // the part before .metered.live, e.g. 'myludo' for myludo.metered.live
+const METERED_KEY = ''; // the API key of a TURN credential (Metered dashboard → TURN Server → Credentials)
+const STUN = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }];
+let iceServers = null;
+async function relayServers() {
+  if (!METERED_APP || !METERED_KEY) return STUN;
+  try {
+    const r = await fetch(`https://${METERED_APP}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(METERED_KEY)}`, { signal: AbortSignal.timeout(5000) });
+    const list = r.ok && await r.json();
+    if (Array.isArray(list) && list.length) return [...STUN, ...list];
+    console.warn('relay credentials not available', r.status);
+  } catch (e) { console.warn('relay credentials failed', e); }
+  return STUN; // relay unavailable: still try direct connections
+}
+
+async function connect() {
+  iceServers ||= await relayServers();
+  net = joinRoom({ appId: APP, password: pass, relayConfig: { urls: RELAYS }, rtcConfig: { iceServers } }, room, {
+    onJoinError: e => {
+      console.warn('join error', e);
+      const msg = String(e?.error);
+      joinTrouble = /could not connect/i.test(msg) ? 'blocked' : /password|decrypt|handshake/i.test(msg) ? 'pass' : 'other';
+      showConn();
+    },
   });
   actMsg = net.makeAction('act'); stateMsg = net.makeAction('state'); errMsg = net.makeAction('err'); emojiMsg = net.makeAction('emoji');
   emojiMsg.onMessage = (e, { peerId }) => { const j = st?.players.findIndex(p => p.peer === peerId); if (j >= 0) showEmoji(j, e); };
@@ -252,12 +277,32 @@ function enterRoom() {
   history.replaceState(null, '', '?room=' + room);
   store(passKey(room), pass);
   show('home', false); show('stats', false);
+  if (isHost) return connect().then(share);
   connect();
-  if (isHost) return share();
   $('ccode').textContent = room;
   show('connecting', true);
-  setTimeout(() => { if (!st) $('connhint').textContent = `Still looking for the host of room ${room}. Make sure the host has the game open. Some mobile-data and office networks block direct connections; Wi-Fi usually works.`; }, 20000);
 }
+
+// Players find each other through these public Nostr relays (all from Trystero's own list, checked reachable),
+// then connect directly. More relays = matchmaking keeps working when some are down.
+const RELAYS = ['wss://nos.lol', 'wss://nostr-01.yakihonne.com', 'wss://nostr.sathoarder.com', 'wss://bucket.coracle.social',
+  'wss://nostr-01.uid.ovh', 'wss://staging.yabu.me', 'wss://top.testrelay.top', 'wss://yabu.me/v2'];
+let joinTrouble = null;
+// Say which step is failing, so players (and we) can tell "can't find the host" from "network blocks the connection".
+function showConn() {
+  if (!net) return;
+  const n = Object.values(getRelaySockets()).filter(w => w.readyState === 1).length;
+  const relays = `Matchmaking: ${n} of ${RELAYS.length} servers connected`;
+  if (isHost) { $('lobbystat').textContent = relays + (n ? '' : ". Friends can't find this room until at least one connects; check your internet."); return; }
+  if (st) return;
+  $('connstat').textContent = relays;
+  $('connhint').textContent =
+    joinTrouble === 'blocked' ? 'Found the host, but a network blocked the direct connection (common on mobile data and office Wi-Fi). Try switching between Wi-Fi and mobile data, on your side or the host\'s.' :
+    joinTrouble === 'pass' ? 'Wrong room number or passcode. Check the invite link.' :
+    !n ? "Can't reach any matchmaking server yet. Check your internet connection." :
+    `Looking for the host of room ${room}… Make sure the host has the game open.`;
+}
+setInterval(showConn, 1000);
 
 function goHome() {
   net?.leave();

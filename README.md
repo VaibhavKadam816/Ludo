@@ -18,7 +18,8 @@ Ad-free online Ludo for 2–6 friends, running entirely on GitHub Pages. No serv
 ## How it works
 
 The host's browser runs the game. Other players connect straight to it (peer-to-peer, WebRTC).
-To find each other, browsers use free public Nostr relays through the open-source [Trystero](https://github.com/dmotz/trystero) library.
+To find each other, browsers use 8 free public Nostr relays (listed in `RELAYS` in `index.html`) through the open-source [Trystero](https://github.com/dmotz/trystero) library.
+The connecting screen shows how many relays are reachable and, if a player can't get in, whether the host wasn't found or their network blocked the direct connection.
 The room passcode encrypts that handshake, so only people with the link or passcode can join.
 
 Things to know:
