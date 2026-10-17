@@ -5,27 +5,42 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ludo</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #f4f4f6; color: #222;
+  :root { --ink: #3d3a4f; --soft: #8a86a0; --line: #e4e0ee; --accent: #8f84e8; --bg: #faf7f2; --card: #fff; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: var(--bg); color: var(--ink);
          display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  h1 { margin: 0; }
+  h1 { margin: 0; letter-spacing: .5px; }
   section { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  input, button { font: inherit; font-size: 18px; padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; width: 240px; box-sizing: border-box; }
-  button { background: #333; color: #fff; border: 0; cursor: pointer; }
-  button:disabled { opacity: .35; cursor: default; }
-  .or { color: #777; margin: 8px 0 0; }
+  input, button { font: inherit; font-size: 17px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  section > input, section > button { width: 240px; box-sizing: border-box; }
+  button { background: var(--accent); color: #fff; border: 0; cursor: pointer; }
+  button.ghost { background: #efecf8; color: var(--ink); }
+  button.small { font-size: 14px; padding: 6px 10px; }
+  button:disabled { opacity: .4; cursor: default; }
+  .or { color: var(--soft); margin: 8px 0 0; }
   .creds { font-size: 22px; text-align: center; line-height: 1.6; }
   .creds b { font-family: ui-monospace, monospace; letter-spacing: 2px; }
-  canvas { width: min(92vw, 560px); aspect-ratio: 1; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0002; }
+  canvas { width: min(92vw, 560px); aspect-ratio: 1; background: var(--card); border-radius: 16px; box-shadow: 0 4px 16px #3d3a4f14; }
   #status { font-size: 18px; display: flex; align-items: center; gap: 8px; min-height: 28px; }
-  #dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
-  #bar { position: sticky; bottom: 12px; }
-  .die { width: 80px; height: 80px; padding: 12px; background: #fff; border: 4px solid #333; border-radius: 18px;
-         display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 4px; box-shadow: 0 5px 0 #0004; }
-  .die i { border-radius: 50%; background: #222; visibility: hidden; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; }
+  #bar { position: sticky; bottom: 12px; z-index: 1; }
+  .die { width: 84px; height: 84px; padding: 13px; background: #fff; border: 5px solid #ccc; border-radius: 20px;
+         display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 4px; box-shadow: 0 5px 0 #3d3a4f22; transition: background .3s, border-color .3s; }
+  .die i { border-radius: 50%; background: var(--ink); visibility: hidden; }
   .die i.on { visibility: visible; }
-  .die:not(:disabled):hover { transform: translateY(-2px); }
+  .die:disabled { opacity: .8; }
+  .die:not(:disabled) { animation: bob 1s ease-in-out infinite; }
   .die.rolling { animation: roll .6s ease-out; }
   @keyframes roll { 50% { transform: rotate(360deg) scale(1.25); } 100% { transform: rotate(720deg); } }
+  @keyframes bob { 50% { transform: translateY(-4px); } }
+  #panel { width: min(92vw, 560px); background: var(--card); border-radius: 16px; padding: 12px 16px; box-sizing: border-box;
+           box-shadow: 0 4px 16px #3d3a4f14; display: flex; flex-direction: column; gap: 10px; }
+  #people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #people li { display: flex; align-items: center; gap: 8px; }
+  #people li .name { flex: 1; }
+  #people li.left .name { text-decoration: line-through; color: var(--soft); }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .row label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 180px; color: var(--soft); font-size: 14px; }
+  .row input[type=range] { flex: 1; padding: 0; accent-color: var(--accent); }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -42,46 +57,72 @@
 </section>
 
 <section id="lobby" class="hidden">
-  <p>Share these with your friends (2–6 players):</p>
+  <p>Invite your friends (2–6 players):</p>
+  <button id="share">🔗 Share invite link</button>
   <div class="creds">Room number <b id="rcode"></b><br>Passcode <b id="rpass"></b></div>
-  <ul id="plist"></ul>
   <button id="start">Start game</button>
   <p id="wait" class="hidden">Waiting for the host to start…</p>
 </section>
 
 <section id="game" class="hidden">
-  <div id="status"><span id="dot"></span><span id="turn"></span></div>
+  <div id="status"><span id="tdot" class="dot"></span><span id="turn"></span></div>
   <div id="msg"></div>
-  <canvas id="c" width="600" height="600" aria-label="Ludo board"></canvas>
+  <canvas id="c" aria-label="Ludo board"></canvas>
   <div id="bar"><button id="die" class="die" aria-label="Roll the die"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></button></div>
 </section>
 
+<div id="panel" class="hidden">
+  <ul id="people"></ul>
+  <div class="row">
+    <button id="voice" class="small">🎙 Join voice chat</button>
+    <button id="mic" class="small ghost hidden"></button>
+    <button id="unvoice" class="small ghost hidden">Leave voice</button>
+  </div>
+  <div class="row">
+    <label>🔊 Game sounds <input id="vol" type="range" min="0" max="100" aria-label="Game sound volume"></label>
+    <button id="exit" class="small ghost">Exit game</button>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 let room = new URLSearchParams(location.search).get('room');
 const id = localStorage.ludoId ||= [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
-let st, hits = [], seen, anim = false;
+let st, disp, es, hits = [], queue = Promise.resolve(), busy = false, pulseUntil = 0;
 
+// Colors: pastel for the board, strong for tokens so they stand out on it.
+const PASTEL = ['#f9c0c0', '#bfe6cc', '#fde7a6', '#bcd7f7', '#dcc8f2', '#fdd3ae'];
+const STRONG = ['#e0475b', '#2f9e5b', '#e5a50a', '#2f74d0', '#8a4fc7', '#ee7d1f'];
+
+// ---------- network ----------
+const offline = () => alert("Can't reach the game server. Open the game from your Render link (…onrender.com), not GitHub Pages (…github.io). If you are on Render, wait a minute for it to wake up and try again.");
+
+// Game errors come back as 400 with a message; anything else means no game server answered.
 async function act(a, quiet) {
-  const r = await fetch('/act', { method: 'POST', body: JSON.stringify({ ...a, room, id }) });
-  if (!r.ok && !quiet) alert(await r.text());
-  return r.ok;
+  const r = await fetch('/act', { method: 'POST', body: JSON.stringify({ ...a, room, id }) }).catch(() => null);
+  if (r?.ok) return true;
+  if (!quiet) r?.status === 400 ? alert(await r.text()) : offline();
+  return false;
 }
 
 async function enter(pass, quiet) {
-  if (!await act({ type: 'join', name: $('name').value.trim(), pass }, quiet)) return;
-  localStorage.ludoName = $('name').value.trim();
+  if (!await act({ type: 'join', name: $('name').value.trim(), pass }, quiet)) return;  localStorage.ludoName = $('name').value.trim();
   history.replaceState(null, '', '?room=' + room);
   $('home').classList.add('hidden');
-  new EventSource(`/events?room=${encodeURIComponent(room)}&id=${id}`).onmessage = e => onState(JSON.parse(e.data));
+  act({ type: 'voice', on: false }, true); // a refresh drops any voice connection
+  es = new EventSource(`/events?room=${encodeURIComponent(room)}&id=${id}`);
+  es.onmessage = e => { const s = JSON.parse(e.data); queue = queue.then(() => apply(s)); };
+  es.addEventListener('signal', e => onSignal(JSON.parse(e.data)));
 }
 
 $('name').value = localStorage.ludoName || '';
 $('code').value = room || '';
-const needName = () => $('name').value.trim() || ($('name').focus(), false);
+const needName = () => $('name').value.trim() || (alert('Enter your name first'), $('name').focus(), false);
 $('create').onclick = async () => {
   if (!needName()) return;
-  const r = await (await fetch('/new', { method: 'POST' })).json();
+  const r = await fetch('/new', { method: 'POST' }).then(r => r.json()).catch(() => null);
+  if (!r) return offline();
   room = r.code;
   enter(r.pass);
 };
@@ -90,35 +131,163 @@ $('join').onclick = () => {
   room = $('code').value.trim().toUpperCase();
   enter($('pass').value.trim());
 };
-if (room) enter(undefined, true); // rejoin after a refresh
+// Invite links look like ?room=CODE#PASSCODE (after # so the passcode never reaches the server or its logs).
+const invite = location.hash.slice(1);
+$('pass').value = invite;
+if (invite) {
+  $('create').classList.add('hidden');
+  document.querySelector('.or').textContent = `You're invited to room ${room}. Enter your name to join.`;
+}
+if (room && (!invite || localStorage.ludoName)) enter(invite || undefined, !invite); // refresh or returning player: join straight away
+else if (invite) $('name').focus();
+
+$('share').onclick = async () => {
+  const url = `${location.origin}${location.pathname}?room=${room}#${st.pass}`;
+  if (navigator.share) return navigator.share({ title: 'Join my Ludo game', text: 'Join my Ludo game', url }).catch(() => {});
+  try { await navigator.clipboard.writeText(url); $('share').textContent = '✅ Link copied, paste it to friends'; }
+  catch { prompt('Copy this invite link:', url); }
+};
 
 $('start').onclick = () => act({ type: 'start' });
 $('die').onclick = () => act({ type: 'roll' });
+$('exit').onclick = async () => {
+  if (!confirm('Leave this game? Your tokens will be removed from the board.')) return;
+  leaveVoice();
+  await act({ type: 'leave' }, true);
+  location.href = location.pathname;
+};
 $('c').onclick = e => {
   const b = e.target.getBoundingClientRect(), k = 600 / b.width;
   const x = (e.clientX - b.left) * k, y = (e.clientY - b.top) * k;
-  const h = hits.find(h => Math.hypot(h.x - x, h.y - y) < Z * .6);
-  if (h) act({ type: 'move', token: h.i });
+  const h = hits.find(h => Math.hypot(h.x - x, h.y - y) < Z * .7);
+  if (h) { hits = []; act({ type: 'move', token: h.i }); }
 };
 
-// Die face: pips in a 3x3 grid
+// ---------- sound (synthesised, no files) ----------
+let AC, master;
+$('vol').value = localStorage.ludoVol ?? 70;
+$('vol').oninput = () => { localStorage.ludoVol = $('vol').value; if (master) master.gain.value = $('vol').value / 100; };
+addEventListener('pointerdown', () => {
+  if (!AC) { AC = new AudioContext(); master = AC.createGain(); master.gain.value = $('vol').value / 100; master.connect(AC.destination); }
+  AC.resume();
+});
+const live = () => AC?.state === 'running';
+function tone(f, dur, { type = 'sine', at = 0, gain = .3, to } = {}) {
+  if (!live()) return;
+  const t = AC.currentTime + at, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+  g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g).connect(master); o.start(t); o.stop(t + dur);
+}
+const SFX = {
+  step: k => tone(520 + k * 35, .09, { type: 'triangle', gain: .4 }),
+  roll() {
+    if (!live()) return;
+    const b = AC.createBuffer(1, AC.sampleRate * .05, AC.sampleRate), d = b.getChannelData(0);
+    for (let k = 0; k < d.length; k++) d[k] = (Math.random() * 2 - 1) * (1 - k / d.length);
+    for (let k = 0; k < 9; k++) {
+      const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+      s.buffer = b; f.type = 'bandpass'; f.frequency.value = 1200 + Math.random() * 2500; g.gain.value = .9;
+      s.connect(f).connect(g).connect(master); s.start(AC.currentTime + k * .065 + Math.random() * .02);
+    }
+  },
+  turn() { tone(660, .15, { gain: .25 }); tone(880, .3, { at: .15, gain: .25 }); },
+  capture: () => tone(520, .45, { type: 'sawtooth', to: 70, gain: .18 }),
+  home: () => [523, 659, 784, 1047].forEach((f, k) => tone(f, .2, { at: k * .1, gain: .22 })),
+  win: () => [523, 659, 784, 1047, 784, 1047].forEach((f, k) => tone(f, .25, { at: k * .14, gain: .25 })),
+};
+
+// ---------- applying server state, with animations ----------
 const PIPS = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
 const face = d => [...$('die').children].forEach((el, i) => el.classList.toggle('on', PIPS[d - 1].includes(i)));
+const ready = s => s?.started && s.winner == null && s.turn === s.me && !s.rolled;
 
-function onState(s) {
-  const newRoll = seen !== undefined && s.rolls !== seen;
-  seen = s.rolls; st = s;
-  if (!newRoll) return anim || render();
-  anim = true;
-  $('die').classList.add('rolling');
-  const spin = setInterval(() => face(1 + Math.floor(Math.random() * 6)), 80);
-  setTimeout(() => { clearInterval(spin); $('die').classList.remove('rolling'); anim = false; render(); }, 600);
+async function apply(s) {
+  const prev = st;
+  busy = true;
+  if (prev && s.rolls !== prev.rolls) { // the die rolled: spin it in the roller's color, then show the result
+    paintDie(prev.turn);
+    $('die').classList.add('rolling');
+    SFX.roll();
+    const spin = setInterval(() => face(1 + Math.floor(Math.random() * 6)), 80);
+    await sleep(600);
+    clearInterval(spin);
+    $('die').classList.remove('rolling');
+    face(s.dice);
+    $('msg').textContent = s.msg;
+  }
+  if (prev?.started && s.started) {
+    const T = 13 * s.n - 2;
+    disp = prev.tokens.map(t => t && [...t]);
+    for (let c = 0; c < s.tokens.length; c++) for (let i = 0; i < 4; i++) {
+      const a = prev.tokens[c]?.[i], b = s.tokens[c]?.[i];
+      if (a == null || b == null || b <= a) continue;
+      const steps = a === -1 ? [0] : Array.from({ length: b - a }, (_, k) => a + 1 + k);
+      for (const [k, p] of steps.entries()) { disp[c][i] = p; SFX.step(k); await sleep(150); }
+      if (b === T + 6) SFX.home();
+    }
+    if (prev.tokens.some((t, c) => t?.some((a, i) => a >= 0 && s.tokens[c]?.[i] === -1))) { SFX.capture(); await sleep(300); }
+    if (s.winner != null && prev.winner == null) SFX.win();
+  }
+  st = s; disp = s.tokens; busy = false;
+  if (ready(s) && !ready(prev)) { SFX.turn(); pulseUntil = performance.now() + 15000; }
+  render();
+  syncVoice();
 }
 
-// Board geometry, in cell units around the center. n arms sit on the sides of a regular n-gon
-// (n=4 is the classic square board). Each arm is 3 lanes wide and 6 cells long; yards fill the gaps.
-const COL = ['#e53935', '#43a047', '#f9c80e', '#1e88e5', '#8e24aa', '#fb8c00'];
-let N, Z, TRACK, HOME, YARD, YARDS, FIN, CENTER;
+function paintDie(turn) {
+  const c = st?.players[turn]?.color ?? 0;
+  $('die').style.background = PASTEL[c];
+  $('die').style.borderColor = STRONG[c];
+}
+
+function render() {
+  $('panel').classList.remove('hidden');
+  $('lobby').classList.toggle('hidden', st.started);
+  $('game').classList.toggle('hidden', !st.started);
+  $('people').replaceChildren(...st.players.map((p, j) => {
+    const li = document.createElement('li');
+    li.className = p.left ? 'left' : '';
+    const dot = Object.assign(document.createElement('span'), { className: 'dot' });
+    dot.style.background = st.started ? STRONG[p.color] : '#d8d4e6';
+    const name = Object.assign(document.createElement('span'), {
+      className: 'name', textContent: p.name + (j === 0 && !st.started ? ' (host)' : '') + (j === st.me ? ' – you' : '') + (p.left ? ' (left)' : '') });
+    li.append(dot, name);
+    if (p.voice) li.append(Object.assign(document.createElement('span'), { textContent: '🎙', title: 'In voice chat' }));
+    if (p.voice && inVoice && j !== st.me) {
+      const b = Object.assign(document.createElement('button'), { className: 'small ghost', textContent: mutedPeers[j] ? 'Unmute' : 'Mute' });
+      b.setAttribute('aria-label', `${mutedPeers[j] ? 'Unmute' : 'Mute'} ${p.name}`);
+      b.onclick = () => { mutedPeers[j] = !mutedPeers[j]; if (audios[j]) audios[j].muted = mutedPeers[j]; render(); };
+      li.append(b);
+    }
+    return li;
+  }));
+  $('voice').classList.toggle('hidden', inVoice);
+  $('mic').classList.toggle('hidden', !inVoice || !mic);
+  $('unvoice').classList.toggle('hidden', !inVoice);
+  $('mic').textContent = micMuted ? '🔇 Unmute my mic' : '🎙 Mute my mic';
+  if (!st.started) {
+    $('rcode').textContent = room;
+    $('rpass').textContent = st.pass;
+    $('start').classList.toggle('hidden', st.me !== 0);
+    $('start').disabled = st.players.length < 2;
+    $('wait').classList.toggle('hidden', st.me === 0);
+    return;
+  }
+  const p = st.players[st.winner ?? st.turn];
+  $('tdot').style.background = STRONG[p.color];
+  $('turn').textContent = st.winner != null ? `🏆 ${p.name} wins!` : `${p.name}'s turn` + (st.me === st.turn ? ' (you)' : '');
+  $('msg').textContent = st.msg;
+  face(st.dice || 6);
+  paintDie(st.winner ?? st.turn);
+  $('die').disabled = !ready(st);
+}
+
+// ---------- board geometry ----------
+// In cell units around the center. n arms sit on the sides of a regular n-gon (n=4 is the classic
+// square board). Each arm is 3 lanes wide and 6 cells long; yards fill the gaps between arms.
+let N, Z, TRACK, HOME, YARD, YARDS, FIN, CENTER, boardImg;
 function build(n) {
   N = n;
   const a = 1.5 / Math.tan(Math.PI / n), C = [...Array(n).keys()];
@@ -142,81 +311,164 @@ function build(n) {
   YARD = YARDS.map(y => y.spots);
   const ext = Math.max(...YARDS.flatMap(y => y.poly.flat()).map(Math.abs), ...TRACK.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]).map(v => v + .75));
   Z = 295 / ext;
+  boardImg = document.createElement('canvas');
+  boardImg.width = boardImg.height = 600 * DPR;
+  drawBoard(boardImg.getContext('2d'));
 }
 const spot = (c, p, i) => {
   const T = 13 * N - 2;
   return p === -1 ? YARD[c][i] : p <= T ? TRACK[(p + 13 * c) % (13 * N)] : p <= T + 5 ? HOME[c][p - T - 1] : FIN[c];
 };
 
-const ctx = $('c').getContext('2d');
+// ---------- drawing ----------
+const DPR = Math.min(2, devicePixelRatio || 1);
+const canvas = $('c'), ctx = canvas.getContext('2d');
+canvas.width = canvas.height = 600 * DPR;
 const px = v => 300 + v * Z;
-function circle(x, y, r, fill, stroke, lw) {
-  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = fill; ctx.fill();
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+function circle(x, y, r, fill, stroke, lw, g = ctx) {
+  g.beginPath(); g.arc(x, y, r, 0, 7);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); }
 }
-function poly(pts, fill) {
-  ctx.beginPath(); pts.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](px(x), px(y)));
-  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
-}
-function cell([x, y, t], fill) {
-  ctx.save(); ctx.translate(px(x), px(y)); ctx.rotate(t);
-  ctx.fillStyle = fill; ctx.fillRect(-Z / 2, -Z / 2, Z, Z);
-  ctx.strokeStyle = '#999'; ctx.lineWidth = 1; ctx.strokeRect(-Z / 2, -Z / 2, Z, Z);
-  ctx.restore();
-}
+function poly(g, pts) { g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](px(x), px(y))); g.closePath(); }
 
-function draw() {
-  if (N !== st.n) build(st.n);
-  ctx.clearRect(0, 0, 600, 600);
+function drawBoard(g) {
+  g.scale(DPR, DPR);
+  const cell = ([x, y, t], fill) => {
+    g.save(); g.translate(px(x), px(y)); g.rotate(t);
+    g.fillStyle = fill; g.fillRect(-Z / 2, -Z / 2, Z, Z);
+    g.strokeStyle = '#ddd9e8'; g.lineWidth = 1; g.strokeRect(-Z / 2, -Z / 2, Z, Z);
+    g.restore();
+  };
   YARDS.forEach((y, c) => {
-    poly(y.poly, COL[c]);
-    y.spots.forEach(([x, y]) => circle(px(x), px(y), Z * .5, '#fff'));
+    poly(g, y.poly); g.fillStyle = PASTEL[c]; g.fill();
+    y.spots.forEach(([x, y]) => circle(px(x), px(y), Z * .5, '#fff', STRONG[c] + '55', 2, g));
   });
-  HOME.forEach((h, c) => h.forEach(p => cell(p, COL[c])));
-  TRACK.forEach((p, k) => cell(p, k % 13 === 0 ? COL[k / 13] : '#fff'));
-  CENTER.forEach((t, c) => poly(t, COL[c]));
-  ctx.fillStyle = '#555'; ctx.font = `${Z * .6}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  TRACK.forEach(([x, y], k) => k % 13 === 8 && ctx.fillText('★', px(x), px(y)));
+  HOME.forEach((h, c) => h.forEach(p => cell(p, PASTEL[c])));
+  TRACK.forEach((p, k) => cell(p, k % 13 === 0 ? PASTEL[k / 13] : '#fff'));
+  CENTER.forEach((t, c) => { poly(g, t); g.fillStyle = PASTEL[c]; g.fill(); });
+  g.fillStyle = '#b9b4cc'; g.font = `${Z * .6}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  TRACK.forEach(([x, y], k) => k % 13 === 8 && g.fillText('★', px(x), px(y)));
+}
 
-  const mine = st.players[st.me], canMove = st.me === st.turn && st.rolled && st.winner == null, T = 13 * N - 2;
+// Flat token: soft shadow, strong-colored disc, white rim, light center.
+function token(x, y, r, c) {
+  circle(x, y + r * .18, r, '#3d3a4f33');
+  circle(x, y, r, STRONG[c], '#fff', Math.max(2, r * .16));
+  circle(x, y, r * .42, PASTEL[c]);
+}
+
+function draw(now) {
+  if (N !== st.n) build(st.n);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(boardImg, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const mine = st.players[st.me], T = 13 * N - 2;
+
+  // Your turn and not rolled yet: pulse your yard for up to 15 s.
+  if (ready(st) && !busy && now < pulseUntil) {
+    const k = .5 + .5 * Math.sin(now / 180);
+    poly(ctx, YARDS[mine.color].poly);
+    ctx.fillStyle = `rgba(255,255,255,${.35 * k})`; ctx.fill();
+    ctx.strokeStyle = STRONG[mine.color]; ctx.globalAlpha = .4 + .6 * k; ctx.lineWidth = 3 + 4 * k; ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  const canMove = !busy && st.me === st.turn && st.rolled && st.winner == null;
   const groups = {};
-  st.tokens.forEach((t, c) => t && t.forEach((p, i) => {
+  disp.forEach((t, c) => t && t.forEach((p, i) => {
     const [x, y] = spot(c, p, i);
     (groups[x.toFixed(2) + ',' + y.toFixed(2)] ||= []).push({ c, i, p, x, y });
   }));
   hits = [];
   for (const g of Object.values(groups)) g.forEach((k, j) => {
-    const x = px(k.x) + (j - (g.length - 1) / 2) * Z * .3, y = px(k.y);
+    const x = px(k.x) + (j - (g.length - 1) / 2) * Z * .32, y = px(k.y);
+    const r = g.length > 1 ? Z * .32 : Z * .4;
     const movable = canMove && k.c === mine.color && (k.p === -1 ? st.dice === 6 : k.p + st.dice <= T + 6);
-    const r = g.length > 1 ? Z * .28 : Z * .35;
-    if (movable) circle(x, y, r + 5, '#fff', '#000', 3);
-    circle(x, y, r, COL[k.c], '#222', 2);
-    if (movable) hits.push({ x, y, i: k.i });
+    if (movable) { // after rolling: pulsing dotted ring on every token you can move
+      ctx.setLineDash([4, 4]); ctx.lineDashOffset = -now / 25;
+      circle(x, y, r + 5 + 3 * Math.sin(now / 150), null, STRONG[k.c], 3);
+      ctx.setLineDash([]);
+      hits.push({ x, y, i: k.i });
+    }
+    token(x, y, r, k.c);
   });
 }
+(function frame(now) { if (st?.started && disp) draw(now); requestAnimationFrame(frame); })(0);
 
-function render() {
-  $('lobby').classList.toggle('hidden', st.started);
-  $('game').classList.toggle('hidden', !st.started);
-  if (!st.started) {
-    $('rcode').textContent = room;
-    $('rpass').textContent = st.pass;
-    $('plist').replaceChildren(...st.players.map((p, i) =>
-      Object.assign(document.createElement('li'), { textContent: p.name + (i === 0 ? ' (host)' : '') + (i === st.me ? ' – you' : '') })));
-    $('start').classList.toggle('hidden', st.me !== 0);
-    $('start').disabled = st.players.length < 2;
-    $('wait').classList.toggle('hidden', st.me === 0);
-    return;
-  }
-  const p = st.players[st.winner ?? st.turn];
-  $('dot').style.background = COL[p.color];
-  $('turn').textContent = st.winner != null ? `${p.name} wins!` : `${p.name}'s turn` + (st.me === st.turn ? ' (you)' : '');
-  $('msg').textContent = st.msg;
-  face(st.dice || 6);
-  $('die').style.borderColor = COL[p.color];
-  $('die').disabled = !(st.me === st.turn && !st.rolled && st.winner == null);
-  draw();
+// ---------- voice chat (WebRTC mesh; the game server relays offers/answers) ----------
+// ponytail: STUN only, no TURN relay; some strict mobile/office networks won't connect. Add a TURN server if that bites.
+const ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
+const pcs = {}, audios = {}, mutedPeers = {};
+let mic = null, inVoice = false, micMuted = false;
+const sig = (to, data) => act({ type: 'signal', to, data }, true);
+const gathered = pc => new Promise(r => {
+  if (pc.iceGatheringState === 'complete') return r();
+  pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r();
+  setTimeout(r, 3000);
+});
+
+function peer(j, offering) {
+  pcs[j]?.close();
+  const pc = pcs[j] = new RTCPeerConnection({ iceServers: ICE });
+  if (mic) mic.getTracks().forEach(t => pc.addTrack(t, mic));
+  else if (offering) pc.addTransceiver('audio', { direction: 'recvonly' });
+  pc.ontrack = e => {
+    const a = audios[j] ||= new Audio();
+    a.srcObject = e.streams[0] || new MediaStream([e.track]);
+    a.muted = !!mutedPeers[j];
+    a.play().catch(() => {});
+  };
+  return pc;
 }
+async function call(j) {
+  const pc = peer(j, true);
+  await pc.setLocalDescription(await pc.createOffer());
+  await gathered(pc);
+  sig(j, pc.localDescription);
+}
+async function onSignal({ from, data }) {
+  if (!inVoice) return;
+  if (data.type === 'offer') {
+    const pc = peer(from, false);
+    await pc.setRemoteDescription(data);
+    await pc.setLocalDescription(await pc.createAnswer());
+    await gathered(pc);
+    sig(from, pc.localDescription);
+  } else if (data.type === 'answer') pcs[from]?.setRemoteDescription(data).catch(() => {});
+}
+function hangUp(j) {
+  pcs[j]?.close(); delete pcs[j];
+  if (audios[j]) { audios[j].srcObject = null; delete audios[j]; }
+}
+// Drop connections to anyone who left voice or the game.
+function syncVoice() {
+  for (const j in pcs) if (!st.players[j]?.voice || st.players[j].left) hangUp(j);
+}
+
+$('voice').onclick = async () => {
+  try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch { mic = null; alert('Microphone not available, so you can listen but others will not hear you.'); }
+  inVoice = true; micMuted = false;
+  await act({ type: 'voice', on: true });
+  st.players.forEach((p, j) => j !== st.me && p.voice && !p.left && call(j)); // newcomer calls everyone already in
+  render();
+};
+$('mic').onclick = () => {
+  micMuted = !micMuted;
+  mic?.getAudioTracks().forEach(t => t.enabled = !micMuted);
+  render();
+};
+function leaveVoice() {
+  if (!inVoice) return;
+  Object.keys(pcs).forEach(hangUp);
+  mic?.getTracks().forEach(t => t.stop());
+  mic = null; inVoice = false;
+  act({ type: 'voice', on: false }, true);
+  render();
+}
+$('unvoice').onclick = leaveVoice;
 </script>
 </body>
 </html>

@@ -34,7 +34,14 @@ function move(g, c, i) {
 
 function pass(g) {
   g.rolled = false;
-  g.turn = (g.turn + 1) % g.players.length;
+  do g.turn = (g.turn + 1) % g.players.length; while (g.players[g.turn].left);
+}
+
+function moveToken(g, me, c, i) {
+  const bonus = move(g, c, i);
+  if (g.tokens[c].every(p => p === last(g) + 6)) g.winner = me;
+  else if (bonus) g.rolled = false;
+  else pass(g);
 }
 
 function handle(g, id, a) {
@@ -44,7 +51,21 @@ function handle(g, id, a) {
     if (a.pass !== g.pass) throw 'Wrong room number or passcode';
     if (g.started) throw 'Game already started';
     if (g.players.length >= 6) throw 'Room is full';
-    g.players.push({ id, name: String(a.name || '').trim().slice(0, 20) || 'Player' });
+    g.players.push({ id, name: String(a.name || '').trim().slice(0, 20) || 'Player', voice: false });
+    return;
+  }
+  if (me < 0) throw 'Join first';
+  if (a.type === 'voice') { g.players[me].voice = !!a.on; return; }
+  if (a.type === 'leave') {
+    if (!g.started) return void g.players.splice(me, 1);
+    const p = g.players[me];
+    if (p.left) return;
+    Object.assign(p, { left: true, voice: false });
+    g.tokens[p.color] = null;
+    g.msg = `${p.name} left the game`;
+    const active = g.players.filter(p => !p.left);
+    if (active.length <= 1) { if (g.winner == null && active.length) g.winner = g.players.indexOf(active[0]); }
+    else if (g.turn === me && g.winner == null) pass(g);
     return;
   }
   if (a.type === 'start') {
@@ -68,17 +89,17 @@ function handle(g, id, a) {
     g.rolled = true;
     g.rolls++;
     g.msg = `${g.players[me].name} rolled ${g.dice}`;
-    if (![0, 1, 2, 3].some(i => legal(g, c, i))) { g.msg += ', no moves'; pass(g); }
+    const opts = [0, 1, 2, 3].filter(i => legal(g, c, i));
+    if (!opts.length) { g.msg += ', no moves'; pass(g); }
+    // Only one real choice (one movable token, or several tokens on the same square): play it.
+    else if (new Set(opts.map(i => g.tokens[c][i])).size === 1) moveToken(g, me, c, opts[0]);
   } else if (a.type === 'move') {
     const i = a.token;
     if (!g.rolled || !Number.isInteger(i) || i < 0 || i > 3 || !legal(g, c, i)) throw 'Illegal move';
-    const bonus = move(g, c, i);
-    if (g.tokens[c].every(p => p === last(g) + 6)) g.winner = me;
-    else if (bonus) g.rolled = false;
-    else pass(g);
+    moveToken(g, me, c, i);
   } else throw 'Unknown action';
 }
-// ponytail: no three-sixes rule, no blockades, no kicking a player who left mid-game
+// ponytail: no three-sixes rule, no blockades, no turn timeout for players who walk away without pressing Exit
 
 function newRoom() {
   let code;
@@ -94,7 +115,7 @@ function newRoom() {
 function broadcast(r) {
   const { clients, players, timer, ...rest } = r;
   for (const [res, id] of clients) {
-    const state = { ...rest, players: players.map(p => ({ name: p.name, color: p.color })), me: players.findIndex(p => p.id === id) };
+    const state = { ...rest, players: players.map(p => ({ name: p.name, color: p.color, voice: p.voice, left: !!p.left })), me: players.findIndex(p => p.id === id) };
     res.write(`data: ${JSON.stringify(state)}\n\n`);
   }
 }
@@ -115,6 +136,15 @@ if (process.argv[2] === 'test') {
   const h = { n: 6, dice: 2, tokens: [[7, -1, -1, -1], null, null, null, null, [18, 80, -1, -1]] };
   assert(move(h, 5, 0)); assert.equal(h.tokens[0][0], -1);
   assert(move(h, 5, 1)); assert.equal(h.tokens[5][1], 82);  // 82 = finished on 6 arms
+  // auto-move + leave, through handle()
+  const r = { players: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }], started: false, turn: 0, rolls: 0, winner: null };
+  handle(r, 'a', { type: 'start' });
+  r.tokens[0] = [10, -1, -1, -1];
+  do { r.turn = 0; r.rolled = false; r.tokens[0] = [10, -1, -1, -1]; handle(r, 'a', { type: 'roll' }); } while (r.dice === 6);
+  assert.equal(r.tokens[0][0], 10 + r.dice);                 // single choice moved automatically
+  r.turn = 1; r.rolled = false; handle(r, 'b', { type: 'leave' });
+  assert.equal(r.turn, 2); assert.equal(r.tokens[1], null);  // turn skips the leaver, tokens gone
+  handle(r, 'c', { type: 'leave' }); assert.equal(r.winner, 0);
   console.log('ok');
   process.exit(0);
 }
@@ -148,12 +178,18 @@ http.createServer((req, res) => {
 
   if (req.method === 'POST' && url.pathname === '/act') {
     let body = '';
-    req.on('data', d => { body += d; if (body.length > 1000) req.destroy(); });
+    req.on('data', d => { body += d; if (body.length > 20000) req.destroy(); }); // voice offers carry ~5 KB of SDP
     req.on('end', () => {
       try {
         const a = JSON.parse(body), r = rooms.get(a.room);
         if (!r) throw 'Wrong room number or passcode';
         if (typeof a.id !== 'string' || !a.id || a.id.length > 64) throw 'Bad id';
+        if (a.type === 'signal') { // voice chat: relay WebRTC offer/answer to one player, no state change
+          const from = r.players.findIndex(p => p.id === a.id), to = r.players[a.to];
+          if (from < 0 || !to) throw 'Bad signal';
+          for (const [res, cid] of r.clients) if (cid === to.id) res.write(`event: signal\ndata: ${JSON.stringify({ from, data: a.data })}\n\n`);
+          return send(200, 'ok');
+        }
         handle(r, a.id, a);
         broadcast(r);
         send(200, 'ok');

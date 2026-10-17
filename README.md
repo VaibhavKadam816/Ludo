@@ -2,9 +2,14 @@
 
 Ad-free online Ludo for 2–6 friends in the browser. No accounts, no installs, no dependencies.
 
-- The host creates a room and shares the **room number** and **passcode**.
+- The host creates a room and shares an **invite link** (or the room number and passcode).
 - 2–4 players get the classic board; 5–6 players get a 5- or 6-armed board.
-- The server rolls the dice and checks every move.
+- The server rolls the dice and checks every move; moves with only one real choice are played automatically.
+- Sounds for rolls, steps, captures and turns, with a volume slider.
+- Built-in voice chat: mute your mic, mute any player, leave voice, or exit the game.
+
+Voice chat connects browsers directly (WebRTC, STUN only). Most home Wi-Fi works; some strict mobile or office
+networks need a TURN relay server, which isn't included. The page must be served over HTTPS (Render does this) for the microphone to work.
 
 ## Run locally
 
