@@ -1,6 +1,6 @@
 {
   "name": "ludo",
   "private": true,
-  "engines": { "node": ">=18" },
-  "scripts": { "start": "node server.js", "test": "node server.js test" }
+  "type": "module",
+  "scripts": { "test": "node test.js" }
 }

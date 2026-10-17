@@ -1,47 +1,51 @@
 # Ludo
 
-Ad-free online Ludo for 2–6 friends in the browser. No accounts, no installs, no dependencies.
+Ad-free online Ludo for 2–6 friends, running entirely on GitHub Pages. No server, no accounts, nothing to pay for.
 
-- The host creates a room and shares an **invite link** (or the room number and passcode).
+- The host picks how many players (2–6), creates a room and shares the **invite link** (or the room number and passcode).
+  The game starts by itself once everyone has joined; the host can also start early.
 - 2–4 players get the classic board; 5–6 players get a 5- or 6-armed board.
-- The server rolls the dice and checks every move; moves with only one real choice are played automatically.
-- Sounds for rolls, steps, captures and turns, with a volume slider.
-- Built-in voice chat: mute your mic, mute any player, leave voice, or exit the game.
+- Moves with only one real choice are played automatically.
+- Effects: pawns hop square by square, captures explode and the captured pawn marches back to its yard,
+  plus banners for SIX, HOME and the winner, with sounds and a volume slider.
+- Voice chat: mute your mic, mute any player, leave voice, or exit the game.
+- Stats (games, wins, captures, time played, recent games) are saved on each player's own device.
 
-Voice chat connects browsers directly (WebRTC, STUN only). Most home Wi-Fi works; some strict mobile or office
-networks need a TURN relay server, which isn't included. The page must be served over HTTPS (Render does this) for the microphone to work.
+## How it works
+
+The host's browser runs the game. Other players connect straight to it (peer-to-peer, WebRTC).
+To find each other, browsers use free public Nostr relays through the open-source [Trystero](https://github.com/dmotz/trystero) library.
+The room passcode encrypts that handshake, so only people with the link or passcode can join.
+
+Things to know:
+- **The host must keep the game open.** If the host closes the page, the game ends for everyone.
+  If the host only refreshes, the game resumes where it was and everyone reconnects automatically.
+- **Some networks block direct connections**: some mobile-data carriers and strict office or school Wi-Fi.
+  Players on those networks can't connect; home Wi-Fi usually works. (Fixing this needs a TURN relay server, which isn't included.)
+- The host's browser rolls the dice, so a tech-savvy host could cheat. Fine among friends.
+- If the public relays are unreachable, players can't find each other until they're back.
+
+## Deploy on GitHub Pages
+
+1. Put these files in a **public** GitHub repository (Pages on a free account needs a public repo).
+2. In the repository: **Settings → Pages → Build and deployment → Source: Deploy from a branch**,
+   branch `main`, folder `/ (root)`, then **Save**.
+3. After a minute the game is live at `https://<your-username>.github.io/<repo-name>/`.
+
+Every push to `main` updates the site.
 
 ## Run locally
 
-Needs Node.js 18 or later.
+The page uses JavaScript modules, so open it through a local web server rather than double-clicking the file:
 
 ```bash
-npm start
+python3 -m http.server 8000
 ```
 
-Open http://localhost:3000. Friends on the same Wi-Fi can use `http://<your-computer-ip>:3000`.
-
-Rule tests: `npm test`
-
-## Deploy (GitHub + Render, free)
-
-GitHub Pages can't run this game because it needs a server. Keep the code on GitHub and let Render run it:
-
-1. Push this folder to a GitHub repository.
-2. Sign in at https://render.com with GitHub.
-3. Click **New → Blueprint**, pick the repository, and click **Apply**. Render reads `render.yaml`.
-4. When the deploy finishes, share the `https://ludo-xxxx.onrender.com` URL with friends.
-
-Every push to the repo redeploys automatically.
-
-Notes:
-- On the free plan the server sleeps after about 15 minutes with nobody connected. The first visit afterwards takes about a minute, and any open rooms are lost.
-- Rooms live in memory, so run a single instance only.
-
-Railway, Fly.io or any Node host also works: the start command is `npm start`, and the port comes from the `PORT` environment variable.
+Then open http://localhost:8000. Rule tests (needs Node.js 18+): `npm test`
 
 ## Files
 
-- `server.js`: game server and rules (`node server.js test` runs the rule checks)
-- `index.html`: the whole client (board, lobby, die)
-- `render.yaml`: Render deploy config
+- `index.html`: the whole client (board, lobby, die, effects, sound, voice, stats, networking)
+- `game.js`: the game rules the host runs
+- `test.js`: rule tests

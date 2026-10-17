@@ -5,73 +5,123 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ludo</title>
 <style>
-  :root { --ink: #3d3a4f; --soft: #8a86a0; --line: #e4e0ee; --accent: #8f84e8; --bg: #faf7f2; --card: #fff; }
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: var(--bg); color: var(--ink);
-         display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  h1 { margin: 0; letter-spacing: .5px; }
-  section { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  input, button { font: inherit; font-size: 17px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
-  section > input, section > button { width: 240px; box-sizing: border-box; }
-  button { background: var(--accent); color: #fff; border: 0; cursor: pointer; }
-  button.ghost { background: #efecf8; color: var(--ink); }
-  button.small { font-size: 14px; padding: 6px 10px; }
-  button:disabled { opacity: .4; cursor: default; }
-  .or { color: var(--soft); margin: 8px 0 0; }
+  :root { --ink: #1f1640; --bg1: #4a2fbd; --bg2: #1b1147; --card: #fff; --line: #e3def5; --soft: #c9c1f0;
+          --go1: #ff8a00; --go2: #ff3d6e; }
+  * { box-sizing: border-box; }
+  body { font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; margin: 0; padding: 16px; min-height: 100vh;
+         background: radial-gradient(circle at 50% 0%, var(--bg1), var(--bg2) 70%) fixed; color: #fff;
+         display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  h1 { margin: 4px 0 0; font-size: 40px; letter-spacing: 2px; font-weight: 900;
+       background: linear-gradient(90deg, #ff3d6e, #ffc107, #1fb75a, #1f8fff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  section { display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(92vw, 360px); }
+  .card { background: #ffffff14; border: 1px solid #ffffff22; border-radius: 18px; padding: 14px; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .card h2 { margin: 0; font-size: 16px; color: var(--soft); font-weight: 700; }
+  input, button { font: inherit; font-size: 17px; padding: 11px 14px; border-radius: 12px; border: 0; width: 100%; }
+  input { background: #fff; color: var(--ink); }
+  button { background: linear-gradient(180deg, var(--go1), var(--go2)); color: #fff; font-weight: 800; cursor: pointer;
+           box-shadow: 0 4px 0 #a3163f; transition: transform .08s; }
+  button:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #a3163f; }
+  button.ghost { background: #ffffff22; box-shadow: none; font-weight: 700; }
+  button.small { font-size: 14px; padding: 7px 11px; width: auto; }
+  button:disabled { opacity: .45; cursor: default; }
+  .pair { display: flex; gap: 8px; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { background: #ffffff22; box-shadow: none; padding: 9px 0; }
+  .seg button.on { background: linear-gradient(180deg, #ffc107, #ff8a00); box-shadow: 0 3px 0 #b35a00; }
+  .hint { color: var(--soft); font-size: 14px; margin: 0; text-align: center; }
   .creds { font-size: 22px; text-align: center; line-height: 1.6; }
-  .creds b { font-family: ui-monospace, monospace; letter-spacing: 2px; }
-  canvas { width: min(92vw, 560px); aspect-ratio: 1; background: var(--card); border-radius: 16px; box-shadow: 0 4px 16px #3d3a4f14; }
-  #status { font-size: 18px; display: flex; align-items: center; gap: 8px; min-height: 28px; }
-  .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; }
+  .creds b { font-family: ui-monospace, monospace; letter-spacing: 3px; color: #ffc107; }
+  .count { font-size: 28px; font-weight: 900; }
+  canvas { width: min(94vw, 580px); aspect-ratio: 1; border-radius: 20px; background: #fff; box-shadow: 0 10px 40px #0008; }
+  #status { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; min-height: 28px; }
+  #msg { color: var(--soft); min-height: 20px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; box-shadow: 0 0 0 2px #fff; }
   #bar { position: sticky; bottom: 12px; z-index: 1; }
-  .die { width: 84px; height: 84px; padding: 13px; background: #fff; border: 5px solid #ccc; border-radius: 20px;
-         display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 4px; box-shadow: 0 5px 0 #3d3a4f22; transition: background .3s, border-color .3s; }
-  .die i { border-radius: 50%; background: var(--ink); visibility: hidden; }
+  .die { width: 88px; height: 88px; padding: 14px; background: #fff; border: 0; border-radius: 22px;
+         display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 5px; box-shadow: 0 6px 0 #0005, 0 0 0 4px #fff inset; }
+  .die i { border-radius: 50%; background: #fff; visibility: hidden; box-shadow: inset 0 -2px 0 #0003; }
   .die i.on { visibility: visible; }
-  .die:disabled { opacity: .8; }
+  .die:disabled { opacity: .85; }
   .die:not(:disabled) { animation: bob 1s ease-in-out infinite; }
   .die.rolling { animation: roll .6s ease-out; }
-  @keyframes roll { 50% { transform: rotate(360deg) scale(1.25); } 100% { transform: rotate(720deg); } }
-  @keyframes bob { 50% { transform: translateY(-4px); } }
-  #panel { width: min(92vw, 560px); background: var(--card); border-radius: 16px; padding: 12px 16px; box-sizing: border-box;
-           box-shadow: 0 4px 16px #3d3a4f14; display: flex; flex-direction: column; gap: 10px; }
+  @keyframes roll { 50% { transform: rotate(360deg) scale(1.3); } 100% { transform: rotate(720deg); } }
+  @keyframes bob { 50% { transform: translateY(-6px) scale(1.04); } }
+  #panel { width: min(94vw, 580px); }
   #people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   #people li { display: flex; align-items: center; gap: 8px; }
   #people li .name { flex: 1; }
   #people li.left .name { text-decoration: line-through; color: var(--soft); }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .row label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 180px; color: var(--soft); font-size: 14px; }
-  .row input[type=range] { flex: 1; padding: 0; accent-color: var(--accent); }
+  .row input[type=range] { flex: 1; padding: 0; accent-color: #ffc107; background: none; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+  .tile { background: #ffffff1a; border-radius: 14px; padding: 10px; text-align: center; }
+  .tile b { display: block; font-size: 24px; color: #ffc107; }
+  .tile span { font-size: 13px; color: var(--soft); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { padding: 6px 4px; text-align: left; border-bottom: 1px solid #ffffff1a; }
+  th { color: var(--soft); font-weight: 600; }
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
-<h1>Ludo</h1>
+<h1>LUDO</h1>
 
 <section id="home">
-  <input id="name" placeholder="Your name" maxlength="20" aria-label="Your name">
-  <button id="create">Create room</button>
-  <p class="or">or join a friend's room</p>
-  <input id="code" placeholder="Room number" maxlength="5" autocapitalize="characters" aria-label="Room number">
-  <input id="pass" placeholder="Passcode" maxlength="6" inputmode="numeric" aria-label="Passcode">
-  <button id="join">Join room</button>
+  <div class="card">
+    <h2 id="namehint">Your name</h2>
+    <input id="name" placeholder="Your name" maxlength="20" aria-label="Your name">
+    <button id="mystats" class="ghost">📊 My stats</button>
+  </div>
+  <div class="card" id="newcard">
+    <h2>New game: how many players?</h2>
+    <div class="seg" id="count"></div>
+    <button id="create">Create room</button>
+  </div>
+  <div class="card">
+    <h2 id="joinhint">Join a friend's room</h2>
+    <input id="code" placeholder="Room number" maxlength="5" autocapitalize="characters" aria-label="Room number">
+    <input id="pass" placeholder="Passcode" maxlength="6" inputmode="numeric" aria-label="Passcode">
+    <button id="join">Join room</button>
+  </div>
+</section>
+
+<section id="stats" class="hidden">
+  <div class="card">
+    <h2>📊 Your stats on this device</h2>
+    <div class="tiles" id="tiles"></div>
+  </div>
+  <div class="card">
+    <h2>Recent games</h2>
+    <table><thead><tr><th>When</th><th>Result</th><th>Players</th><th>💥</th><th>Time</th></tr></thead><tbody id="hist"></tbody></table>
+    <p class="hint hidden" id="nohist">No games yet. Go play one!</p>
+  </div>
+  <button id="back" class="ghost">← Back</button>
+</section>
+
+<section id="connecting" class="hidden">
+  <div class="count">Connecting…</div>
+  <p class="hint" id="connhint">Looking for the host of room <b id="ccode"></b>.</p>
+  <button id="cancel" class="ghost">Cancel</button>
 </section>
 
 <section id="lobby" class="hidden">
-  <p>Invite your friends (2–6 players):</p>
+  <div class="count" id="waiting"></div>
+  <p class="hint">The game starts by itself when everyone has joined.</p>
   <button id="share">🔗 Share invite link</button>
-  <div class="creds">Room number <b id="rcode"></b><br>Passcode <b id="rpass"></b></div>
-  <button id="start">Start game</button>
-  <p id="wait" class="hidden">Waiting for the host to start…</p>
+  <div class="creds">Room <b id="rcode"></b><br>Passcode <b id="rpass"></b></div>
+  <button id="start" class="ghost">Start now</button>
+  <p class="hint" id="hostnote"></p>
 </section>
 
-<section id="game" class="hidden">
+<section id="game" class="hidden" style="width:auto">
   <div id="status"><span id="tdot" class="dot"></span><span id="turn"></span></div>
   <div id="msg"></div>
   <canvas id="c" aria-label="Ludo board"></canvas>
   <div id="bar"><button id="die" class="die" aria-label="Roll the die"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></button></div>
 </section>
 
-<div id="panel" class="hidden">
+<div id="panel" class="card hidden">
   <ul id="people"></ul>
   <div class="row">
     <button id="voice" class="small">🎙 Join voice chat</button>
@@ -84,82 +134,210 @@
   </div>
 </div>
 
-<script>
+<script type="module">
+// Peer-to-peer: the host's browser runs the rules (game.js) and sends each player their view of the game.
+// Players find each other through free public Nostr relays (via Trystero); the passcode encrypts that handshake.
+import { joinRoom, selfId } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm';
+import { newGame, handle, view } from './game.js';
+
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let room = new URLSearchParams(location.search).get('room');
+const show = (id, on) => $(id).classList.toggle('hidden', !on);
+const APP = 'ludo-vaibhavkadam816-p2p'; // our namespace on the public relays
 const id = localStorage.ludoId ||= [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
-let st, disp, es, hits = [], queue = Promise.resolve(), busy = false, pulseUntil = 0;
+let room = new URLSearchParams(location.search).get('room'), pass = null;
+let net, actMsg, stateMsg, errMsg, hostPeer = null, hostGone = false, isHost = false, g = null;
+let st, disp, hits = [], queue = Promise.resolve(), busy = false, pulseUntil = 0, hop = null;
 
-// Colors: pastel for the board, strong for tokens so they stand out on it.
-const PASTEL = ['#f9c0c0', '#bfe6cc', '#fde7a6', '#bcd7f7', '#dcc8f2', '#fdd3ae'];
-const STRONG = ['#e0475b', '#2f9e5b', '#e5a50a', '#2f74d0', '#8a4fc7', '#ee7d1f'];
+// Bold game colors; DARK shades for pawn bodies and outlines.
+const COL = ['#f0353f', '#1fb75a', '#ffc107', '#1f8fff', '#9d4dff', '#ff7a1a'];
+const shade = (hex, k) => '#' + [1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * k).toString(16).padStart(2, '0')).join('');
+const DARK = COL.map(c => shade(c, .62));
+const LIGHT = COL.map(c => '#' + [1, 3, 5].map(i => { const v = parseInt(c.slice(i, i + 2), 16); return Math.round(v + (255 - v) * .45).toString(16).padStart(2, '0'); }).join(''));
 
-// ---------- network ----------
-const offline = () => alert("Can't reach the game server. Open the game from your Render link (…onrender.com), not GitHub Pages (…github.io). If you are on Render, wait a minute for it to wake up and try again.");
+// ---------- networking ----------
+const hostKey = code => 'ludoHost:' + code, passKey = code => 'ludoPass:' + code;
+const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
+const livePeers = () => { const p = net?.getPeers() || {}; return p instanceof Map ? [...p.keys()] : Object.keys(p); };
 
-// Game errors come back as 400 with a message; anything else means no game server answered.
-async function act(a, quiet) {
-  const r = await fetch('/act', { method: 'POST', body: JSON.stringify({ ...a, room, id }) }).catch(() => null);
-  if (r?.ok) return true;
-  if (!quiet) r?.status === 400 ? alert(await r.text()) : offline();
-  return false;
+function connect() {
+  net = joinRoom({ appId: APP, password: pass }, room, {
+    onJoinError: e => { console.warn('join error', e); $('connhint').textContent = 'Could not connect. Check the room number and passcode. If they are right, your network may be blocking direct connections; try Wi-Fi.'; },
+  });
+  actMsg = net.makeAction('act'); stateMsg = net.makeAction('state'); errMsg = net.makeAction('err');
+
+  net.onPeerJoin = peer => {
+    if (isHost) stateMsg.send(view(g, ''), { target: peer }); // introduce ourselves as the host
+    if (mic) net.addStream(mic, { target: peer });
+  };
+  net.onPeerLeave = peer => {
+    if (audios[peer]) { audios[peer].srcObject = null; delete audios[peer]; }
+    if (!isHost && peer === hostPeer) {
+      hostGone = true; if (st) render();
+      // Rejoin with a fresh connection: a stale one can't reach a host who refreshed their page.
+      net.leave(); setTimeout(connect, 1500);
+    }
+  };
+  // Host: apply a guest's action and send everyone the new state.
+  actMsg.onMessage = (a, { peerId }) => {
+    if (!isHost) return;
+    try { handle(g, a?.id, a, peerId); share(); }
+    catch (e) { errMsg.send(typeof e === 'string' ? e : 'Bad request', { target: peerId }); }
+  };
+  // Guest: state from the host. The first one (before we're a player) is the host saying hello: ask to join.
+  stateMsg.onMessage = (s, { peerId }) => {
+    if (isHost) return;
+    hostPeer = peerId; hostGone = false;
+    if (s.me < 0) return void actMsg.send({ type: 'join', id, name: myName() }, { target: peerId });
+    queue = queue.then(() => apply(s));
+  };
+  errMsg.onMessage = m => { alert(m); if (!st || st.me < 0) goHome(); };
+  net.onPeerStream = (stream, peer) => {
+    const a = audios[peer] ||= new Audio();
+    a.srcObject = stream;
+    syncAudio();
+  };
 }
 
-async function enter(pass, quiet) {
-  if (!await act({ type: 'join', name: $('name').value.trim(), pass }, quiet)) return;  localStorage.ludoName = $('name').value.trim();
+// Host: save the game (so a refresh resumes it) and send every connected player their view.
+function share() {
+  store(hostKey(room), JSON.stringify(g));
+  const live = livePeers();
+  for (const p of g.players) if (p.id !== id && live.includes(p.peer)) stateMsg.send(view(g, p.id), { target: p.peer });
+  queue = queue.then(() => apply(view(g, id)));
+}
+
+function act(a) {
+  if (isHost) { try { handle(g, id, a, selfId); share(); } catch (e) { alert(e); } return; }
+  if (!hostPeer || hostGone) return alert('Not connected to the host right now.');
+  actMsg.send({ ...a, id }, { target: hostPeer });
+}
+
+function enterRoom() {
   history.replaceState(null, '', '?room=' + room);
-  $('home').classList.add('hidden');
-  act({ type: 'voice', on: false }, true); // a refresh drops any voice connection
-  es = new EventSource(`/events?room=${encodeURIComponent(room)}&id=${id}`);
-  es.onmessage = e => { const s = JSON.parse(e.data); queue = queue.then(() => apply(s)); };
-  es.addEventListener('signal', e => onSignal(JSON.parse(e.data)));
+  store(passKey(room), pass);
+  show('home', false); show('stats', false);
+  connect();
+  if (isHost) return share();
+  $('ccode').textContent = room;
+  show('connecting', true);
+  setTimeout(() => { if (!st) $('connhint').textContent = `Still looking for the host of room ${room}. Make sure the host has the game open. Some mobile-data and office networks block direct connections; Wi-Fi usually works.`; }, 20000);
 }
 
+function goHome() {
+  net?.leave();
+  store(passKey(room), null); store(hostKey(room), null);
+  location.href = location.pathname;
+}
+
+// ---------- local stats (this device only) ----------
+const loadStats = () => { try { return JSON.parse(localStorage.ludoStats) || null; } catch { return null; } } ;
+function recordGame(s, result) {
+  const key = room + ':' + s.startedAt;
+  if (!s.startedAt || localStorage.ludoLastGame === key) return;
+  store('ludoLastGame', key);
+  const S = loadStats() || { games: 0, wins: 0, captures: 0, seconds: 0, history: [] }, me = s.players[s.me];
+  const seconds = Math.round((Date.now() - s.startedAt) / 1000);
+  S.games++; S.captures += me.captures; S.seconds += seconds;
+  if (result === 'won') S.wins++;
+  S.history = [{ at: new Date().toISOString(), result, captures: me.captures, seconds, players: s.players.map(p => p.name) }, ...S.history].slice(0, 30);
+  store('ludoStats', JSON.stringify(S));
+}
+$('mystats').onclick = () => {
+  const s = loadStats() || { games: 0, wins: 0, captures: 0, seconds: 0, history: [] };
+  const h = Math.floor(s.seconds / 3600), m = Math.round(s.seconds % 3600 / 60);
+  $('tiles').replaceChildren(...[[s.games, 'Games'], [s.wins, 'Wins'], [s.games ? Math.round(100 * s.wins / s.games) + '%' : '–', 'Win rate'],
+    [s.captures, 'Captures'], [h ? `${h}h ${m}m` : `${m}m`, 'Time played']].map(([v, l]) => {
+    const t = document.createElement('div'); t.className = 'tile';
+    t.append(Object.assign(document.createElement('b'), { textContent: v }), Object.assign(document.createElement('span'), { textContent: l }));
+    return t;
+  }));
+  $('hist').replaceChildren(...s.history.map(g => {
+    const tr = document.createElement('tr');
+    [new Date(g.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+     { won: '🏆 Won', lost: 'Lost', left: 'Left', ended: 'Ended' }[g.result], g.players.join(', '), g.captures, Math.round(g.seconds / 60) + 'm']
+      .forEach(v => tr.append(Object.assign(document.createElement('td'), { textContent: v })));
+    return tr;
+  }));
+  show('nohist', !s.history.length);
+  show('home', false); show('stats', true);
+};
+$('back').onclick = () => { show('stats', false); show('home', true); };
+
+// ---------- home: create / join ----------
+let expected = +(localStorage.ludoCount || 4);
+$('count').replaceChildren(...[2, 3, 4, 5, 6].map(n => {
+  const b = Object.assign(document.createElement('button'), { textContent: n });
+  b.onclick = () => { expected = n; store('ludoCount', n); [...$('count').children].forEach(x => x.classList.toggle('on', x === b)); };
+  b.classList.toggle('on', n === expected);
+  return b;
+}));
+const myName = () => $('name').value.trim();
 $('name').value = localStorage.ludoName || '';
-$('code').value = room || '';
-const needName = () => $('name').value.trim() || (alert('Enter your name first'), $('name').focus(), false);
-$('create').onclick = async () => {
+const needName = () => { const n = myName(); if (!n) { alert('Enter your name first'); $('name').focus(); } else store('ludoName', n); return n; };
+const randomCode = () => [...crypto.getRandomValues(new Uint8Array(5))].map(b => '23456789ABCDEFGHJKMNPQRSTUVWXYZ'[b % 31]).join('');
+
+$('create').onclick = () => {
   if (!needName()) return;
-  const r = await fetch('/new', { method: 'POST' }).then(r => r.json()).catch(() => null);
-  if (!r) return offline();
-  room = r.code;
-  enter(r.pass);
+  room = randomCode();
+  pass = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, '0');
+  isHost = true;
+  g = newGame(expected);
+  handle(g, id, { type: 'join', name: myName() }, selfId);
+  enterRoom();
 };
 $('join').onclick = () => {
   if (!needName()) return;
   room = $('code').value.trim().toUpperCase();
-  enter($('pass').value.trim());
+  pass = $('pass').value.trim();
+  if (!room || !pass) return alert('Enter the room number and passcode');
+  enterRoom();
 };
-// Invite links look like ?room=CODE#PASSCODE (after # so the passcode never reaches the server or its logs).
+$('cancel').onclick = goHome;
+
+// Invite links look like ?room=CODE#PASSCODE (the part after # never leaves the browser).
 const invite = location.hash.slice(1);
-$('pass').value = invite;
-if (invite) {
-  $('create').classList.add('hidden');
-  document.querySelector('.or').textContent = `You're invited to room ${room}. Enter your name to join.`;
+if (room) {
+  pass = invite || localStorage.getItem(passKey(room));
+  const saved = localStorage.getItem(hostKey(room));
+  if (saved) { // the host refreshed: pick the game back up
+    isHost = true; g = JSON.parse(saved);
+    g.players[0].peer = selfId; g.players[0].voice = false;
+    enterRoom();
+  } else if (pass && myName()) enterRoom();
+  else if (pass) {
+    $('code').value = room; $('pass').value = pass;
+    show('newcard', false);
+    $('joinhint').textContent = `You're invited to room ${room}!`;
+    $('namehint').textContent = 'Enter your name, then tap Join room';
+    $('name').focus();
+  }
 }
-if (room && (!invite || localStorage.ludoName)) enter(invite || undefined, !invite); // refresh or returning player: join straight away
-else if (invite) $('name').focus();
 
 $('share').onclick = async () => {
-  const url = `${location.origin}${location.pathname}?room=${room}#${st.pass}`;
+  const url = `${location.origin}${location.pathname}?room=${room}#${pass}`;
   if (navigator.share) return navigator.share({ title: 'Join my Ludo game', text: 'Join my Ludo game', url }).catch(() => {});
   try { await navigator.clipboard.writeText(url); $('share').textContent = '✅ Link copied, paste it to friends'; }
   catch { prompt('Copy this invite link:', url); }
 };
 
 $('start').onclick = () => act({ type: 'start' });
-$('die').onclick = () => act({ type: 'roll' });
+$('die').onclick = () => { $('die').disabled = true; act({ type: 'roll' }); }; // disabled until the next state: no double rolls
 $('exit').onclick = async () => {
-  if (!confirm('Leave this game? Your tokens will be removed from the board.')) return;
+  const live = st?.started && st.winner == null && !st.over;
+  if (isHost && live && !confirm("You're the host: leaving ends the game for everyone. Leave?")) return;
+  if (!isHost && live && !confirm('Leave this game? Your tokens will be removed from the board.')) return;
   leaveVoice();
-  await act({ type: 'leave' }, true);
-  location.href = location.pathname;
+  if (live) recordGame(st, 'left');
+  if (isHost) { g.over = true; g.msg = 'The host ended the game'; share(); }
+  else act({ type: 'leave' });
+  await sleep(400); // let the last message go out
+  goHome();
 };
 $('c').onclick = e => {
   const b = e.target.getBoundingClientRect(), k = 600 / b.width;
   const x = (e.clientX - b.left) * k, y = (e.clientY - b.top) * k;
-  const h = hits.find(h => Math.hypot(h.x - x, h.y - y) < Z * .7);
+  const h = hits.find(h => Math.hypot(h.x - x, h.y - y) < Z * .75);
   if (h) { hits = []; act({ type: 'move', token: h.i }); }
 };
 
@@ -180,32 +358,75 @@ function tone(f, dur, { type = 'sine', at = 0, gain = .3, to } = {}) {
   g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   o.connect(g).connect(master); o.start(t); o.stop(t + dur);
 }
+function noise(dur, freq, at = 0, gain = .9) {
+  if (!live()) return;
+  const b = AC.createBuffer(1, AC.sampleRate * dur, AC.sampleRate), d = b.getChannelData(0);
+  for (let k = 0; k < d.length; k++) d[k] = (Math.random() * 2 - 1) * (1 - k / d.length);
+  const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = b; f.type = 'bandpass'; f.frequency.value = freq; g.gain.value = gain;
+  s.connect(f).connect(g).connect(master); s.start(AC.currentTime + at);
+}
 const SFX = {
   step: k => tone(520 + k * 35, .09, { type: 'triangle', gain: .4 }),
-  roll() {
-    if (!live()) return;
-    const b = AC.createBuffer(1, AC.sampleRate * .05, AC.sampleRate), d = b.getChannelData(0);
-    for (let k = 0; k < d.length; k++) d[k] = (Math.random() * 2 - 1) * (1 - k / d.length);
-    for (let k = 0; k < 9; k++) {
-      const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
-      s.buffer = b; f.type = 'bandpass'; f.frequency.value = 1200 + Math.random() * 2500; g.gain.value = .9;
-      s.connect(f).connect(g).connect(master); s.start(AC.currentTime + k * .065 + Math.random() * .02);
-    }
-  },
+  back: k => tone(900 - k * 12, .05, { type: 'square', gain: .08 }),
+  roll() { for (let k = 0; k < 9; k++) noise(.05, 1200 + Math.random() * 2500, k * .065 + Math.random() * .02); },
+  out: () => tone(300, .25, { type: 'triangle', to: 900, gain: .3 }),
+  six() { [784, 1047, 1319].forEach((f, k) => tone(f, .15, { at: k * .07, gain: .2, type: 'triangle' })); },
   turn() { tone(660, .15, { gain: .25 }); tone(880, .3, { at: .15, gain: .25 }); },
-  capture: () => tone(520, .45, { type: 'sawtooth', to: 70, gain: .18 }),
+  capture() { noise(.35, 400, 0, 1.4); tone(220, .5, { type: 'sawtooth', to: 50, gain: .25 }); tone(880, .3, { type: 'square', to: 110, gain: .08, at: .05 }); },
   home: () => [523, 659, 784, 1047].forEach((f, k) => tone(f, .2, { at: k * .1, gain: .22 })),
-  win: () => [523, 659, 784, 1047, 784, 1047].forEach((f, k) => tone(f, .25, { at: k * .14, gain: .25 })),
+  win: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, k) => tone(f, .28, { at: k * .14, gain: .25, type: 'triangle' })),
 };
+
+// ---------- effects: particles, floating text, screen shake ----------
+const FX = { parts: [], texts: [], shake: 0 };
+function burst(x, y, colors, n = 30, speed = 5) {
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2, v = speed * (.3 + Math.random());
+    FX.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 2, life: 1, decay: .015 + Math.random() * .02,
+      color: colors[k % colors.length], size: 3 + Math.random() * 4, rot: Math.random() * 6, conf: Math.random() < .5 });
+  }
+}
+function confetti() {
+  for (let k = 0; k < 160; k++) FX.parts.push({ x: Math.random() * 600, y: -20 - Math.random() * 300, vx: Math.random() * 2 - 1, vy: 2 + Math.random() * 2,
+    life: 1, decay: .004, color: COL[k % COL.length], size: 5 + Math.random() * 5, rot: Math.random() * 6, conf: true, float: true });
+}
+const say = (text, color, x = 300, y = 300, big = 1) => FX.texts.push({ text, color, x, y, life: 1, big });
+const at = (c, p, i) => { const [x, y] = spot(c, p, i); return [px(x), px(y)]; };
+function drawFX() {
+  FX.parts = FX.parts.filter(p => p.life > 0);
+  for (const p of FX.parts) {
+    p.x += p.vx; p.y += p.vy; p.vy += p.float ? .02 : .18; p.life -= p.decay; p.rot += .15;
+    ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color;
+    if (p.conf) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); ctx.restore(); }
+    else { ctx.beginPath(); ctx.arc(p.x, p.y, p.size / 2, 0, 7); ctx.fill(); }
+  }
+  FX.texts = FX.texts.filter(t => t.life > 0);
+  for (const t of FX.texts) {
+    const pop = Math.min(1, (1 - t.life) * 6), s = (.6 + .5 * pop) * t.big;
+    t.life -= .012; t.y -= .5;
+    ctx.globalAlpha = Math.min(1, t.life * 2);
+    ctx.font = `900 ${Math.round(42 * s)}px ui-rounded, system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 8; ctx.strokeStyle = '#1b1147'; ctx.strokeText(t.text, t.x, t.y);
+    ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y);
+  }
+  ctx.globalAlpha = 1;
+}
 
 // ---------- applying server state, with animations ----------
 const PIPS = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
 const face = d => [...$('die').children].forEach((el, i) => el.classList.toggle('on', PIPS[d - 1].includes(i)));
-const ready = s => s?.started && s.winner == null && s.turn === s.me && !s.rolled;
+const ready = s => s?.started && s.winner == null && !s.over && !hostGone && s.turn === s.me && !s.rolled;
+
+async function walk(c, i, steps, ms, sound) {
+  for (const [k, p] of steps.entries()) { disp[c][i] = p; hop = { c, i, t: performance.now(), ms }; sound(k); await sleep(ms); }
+  hop = null;
+}
 
 async function apply(s) {
   const prev = st;
   busy = true;
+  if (s.started && N !== s.n) build(s.n); // not only in draw(): background tabs don't draw, but effects need positions
   if (prev && s.rolls !== prev.rolls) { // the die rolled: spin it in the roller's color, then show the result
     paintDie(prev.turn);
     $('die').classList.add('rolling');
@@ -216,69 +437,85 @@ async function apply(s) {
     $('die').classList.remove('rolling');
     face(s.dice);
     $('msg').textContent = s.msg;
+    if (s.dice === 6) { SFX.six(); say('SIX!', '#ffc107', 300, 300, 1.3); }
   }
   if (prev?.started && s.started) {
-    const T = 13 * s.n - 2;
+    const T = 13 * s.n - 2, victims = [];
     disp = prev.tokens.map(t => t && [...t]);
     for (let c = 0; c < s.tokens.length; c++) for (let i = 0; i < 4; i++) {
       const a = prev.tokens[c]?.[i], b = s.tokens[c]?.[i];
-      if (a == null || b == null || b <= a) continue;
-      const steps = a === -1 ? [0] : Array.from({ length: b - a }, (_, k) => a + 1 + k);
-      for (const [k, p] of steps.entries()) { disp[c][i] = p; SFX.step(k); await sleep(150); }
-      if (b === T + 6) SFX.home();
+      if (a == null || b == null) continue;
+      if (a >= 0 && b === -1) victims.push({ c, i, a });
+      if (b <= a) continue;
+      if (a === -1) { disp[c][i] = 0; SFX.out(); burst(...at(c, 0, i), [COL[c], '#fff'], 16, 3); await sleep(250); continue; }
+      await walk(c, i, Array.from({ length: b - a }, (_, k) => a + 1 + k), 150, SFX.step);
+      if (b === T + 6) { SFX.home(); burst(...at(c, b, i), COL, 50, 6); say('HOME!', COL[c], ...at(c, b, i)); await sleep(400); }
     }
-    if (prev.tokens.some((t, c) => t?.some((a, i) => a >= 0 && s.tokens[c]?.[i] === -1))) { SFX.capture(); await sleep(300); }
-    if (s.winner != null && prev.winner == null) SFX.win();
+    // Captures: explosion, shake, then the victim marches all the way back to its yard.
+    for (const v of victims) {
+      const [x, y] = at(v.c, v.a, v.i);
+      SFX.capture(); FX.shake = 14;
+      burst(x, y, [COL[v.c], DARK[v.c], '#fff', '#ffc107'], 60, 7);
+      say('CAPTURED!', '#fff', x, y - 20);
+      await sleep(450);
+      const ms = Math.max(22, Math.min(70, 1600 / (v.a + 1)));
+      await walk(v.c, v.i, [...Array.from({ length: v.a }, (_, k) => v.a - 1 - k), -1], ms, SFX.back);
+      burst(...at(v.c, -1, v.i), [COL[v.c], '#fff'], 14, 2);
+    }
+    if (s.winner != null && prev.winner == null) { SFX.win(); confetti(); say(`${s.players[s.winner].name} WINS!`, '#ffc107', 300, 280, 1.1); }
   }
   st = s; disp = s.tokens; busy = false;
   if (ready(s) && !ready(prev)) { SFX.turn(); pulseUntil = performance.now() + 15000; }
+  if (s.started && s.winner != null) recordGame(s, s.winner === s.me ? 'won' : 'lost');
+  else if (s.over) recordGame(s, 'ended');
+  if (s.players[s.me]?.voice && !inVoice) act({ type: 'voice', on: false }); // a refresh dropped our voice connection
   render();
-  syncVoice();
 }
 
 function paintDie(turn) {
   const c = st?.players[turn]?.color ?? 0;
-  $('die').style.background = PASTEL[c];
-  $('die').style.borderColor = STRONG[c];
+  $('die').style.background = `linear-gradient(160deg, ${COL[c]}, ${DARK[c]})`;
 }
 
 function render() {
-  $('panel').classList.remove('hidden');
-  $('lobby').classList.toggle('hidden', st.started);
-  $('game').classList.toggle('hidden', !st.started);
+  show('connecting', false);
+  show('panel', true);
+  show('lobby', !st.started);
+  show('game', st.started);
   $('people').replaceChildren(...st.players.map((p, j) => {
     const li = document.createElement('li');
     li.className = p.left ? 'left' : '';
     const dot = Object.assign(document.createElement('span'), { className: 'dot' });
-    dot.style.background = st.started ? STRONG[p.color] : '#d8d4e6';
+    dot.style.background = st.started ? COL[p.color] : '#ffffff55';
     const name = Object.assign(document.createElement('span'), {
       className: 'name', textContent: p.name + (j === 0 && !st.started ? ' (host)' : '') + (j === st.me ? ' – you' : '') + (p.left ? ' (left)' : '') });
     li.append(dot, name);
+    if (st.started && p.captures) li.append(Object.assign(document.createElement('span'), { textContent: `💥${p.captures}`, title: 'Captures this game' }));
     if (p.voice) li.append(Object.assign(document.createElement('span'), { textContent: '🎙', title: 'In voice chat' }));
     if (p.voice && inVoice && j !== st.me) {
-      const b = Object.assign(document.createElement('button'), { className: 'small ghost', textContent: mutedPeers[j] ? 'Unmute' : 'Mute' });
-      b.setAttribute('aria-label', `${mutedPeers[j] ? 'Unmute' : 'Mute'} ${p.name}`);
-      b.onclick = () => { mutedPeers[j] = !mutedPeers[j]; if (audios[j]) audios[j].muted = mutedPeers[j]; render(); };
+      const muted = !!mutedPeers[p.peer];
+      const b = Object.assign(document.createElement('button'), { className: 'small ghost', textContent: muted ? 'Unmute' : 'Mute' });
+      b.setAttribute('aria-label', `${muted ? 'Unmute' : 'Mute'} ${p.name}`);
+      b.onclick = () => { mutedPeers[p.peer] = !muted; syncAudio(); render(); };
       li.append(b);
     }
     return li;
   }));
-  $('voice').classList.toggle('hidden', inVoice);
-  $('mic').classList.toggle('hidden', !inVoice || !mic);
-  $('unvoice').classList.toggle('hidden', !inVoice);
+  show('voice', !inVoice); show('mic', inVoice && mic); show('unvoice', inVoice);
   $('mic').textContent = micMuted ? '🔇 Unmute my mic' : '🎙 Mute my mic';
   if (!st.started) {
+    $('waiting').textContent = `${st.players.length} / ${st.expected} players joined`;
     $('rcode').textContent = room;
-    $('rpass').textContent = st.pass;
-    $('start').classList.toggle('hidden', st.me !== 0);
-    $('start').disabled = st.players.length < 2;
-    $('wait').classList.toggle('hidden', st.me === 0);
+    $('rpass').textContent = pass;
+    show('start', st.me === 0 && st.players.length >= 2);
+    $('hostnote').textContent = isHost ? "You're the host: keep this page open while others play." : '';
+    $('start').textContent = `Start now with ${st.players.length}`;
     return;
   }
   const p = st.players[st.winner ?? st.turn];
-  $('tdot').style.background = STRONG[p.color];
-  $('turn').textContent = st.winner != null ? `🏆 ${p.name} wins!` : `${p.name}'s turn` + (st.me === st.turn ? ' (you)' : '');
-  $('msg').textContent = st.msg;
+  $('tdot').style.background = COL[p.color];
+  $('turn').textContent = st.winner != null ? `🏆 ${p.name} wins!` : st.over ? 'Game over' : `${p.name}'s turn` + (st.me === st.turn ? ' (you)' : '');
+  $('msg').textContent = hostGone ? '⚠️ Lost the host. Waiting for them to come back…' : st.msg;
   face(st.dice || 6);
   paintDie(st.winner ?? st.turn);
   $('die').disabled = !ready(st);
@@ -304,13 +541,14 @@ function build(n) {
   YARDS = C.map(c => {
     const [ax, ay] = end(c, 1), e1 = P(c, 1, 0), e2 = P(c + 1, 1, 0), at = (s, k) => [ax + s * e1[0] + k * e2[0], ay + s * e1[1] + k * e2[1]];
     const mid = n === 4 ? 3 : 3 / (1 + Math.sin(Math.PI / n)); // centre of the triangular yard's incircle
-    const s = n === 4 ? 1 : .6;
-    return { poly: n === 4 ? [at(0, 0), at(6, 0), at(6, 6), at(0, 6)] : [at(0, 0), at(6, 0), at(0, 6)],
+    const s = n === 4 ? 1 : .6, I = at(mid, mid);
+    const poly = n === 4 ? [at(0, 0), at(6, 0), at(6, 6), at(0, 6)] : [at(0, 0), at(6, 0), at(0, 6)];
+    return { poly, inner: poly.map(([x, y]) => [I[0] + .68 * (x - I[0]), I[1] + .68 * (y - I[1])]),
              spots: [[-s, -s], [s, -s], [-s, s], [s, s]].map(([p, q]) => at(mid + p, mid + q)) };
   });
   YARD = YARDS.map(y => y.spots);
   const ext = Math.max(...YARDS.flatMap(y => y.poly.flat()).map(Math.abs), ...TRACK.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]).map(v => v + .75));
-  Z = 295 / ext;
+  Z = 292 / ext;
   boardImg = document.createElement('canvas');
   boardImg.width = boardImg.height = 600 * DPR;
   drawBoard(boardImg.getContext('2d'));
@@ -337,42 +575,64 @@ function drawBoard(g) {
   const cell = ([x, y, t], fill) => {
     g.save(); g.translate(px(x), px(y)); g.rotate(t);
     g.fillStyle = fill; g.fillRect(-Z / 2, -Z / 2, Z, Z);
-    g.strokeStyle = '#ddd9e8'; g.lineWidth = 1; g.strokeRect(-Z / 2, -Z / 2, Z, Z);
+    g.strokeStyle = '#cfc9e3'; g.lineWidth = 1; g.strokeRect(-Z / 2, -Z / 2, Z, Z);
     g.restore();
   };
   YARDS.forEach((y, c) => {
-    poly(g, y.poly); g.fillStyle = PASTEL[c]; g.fill();
-    y.spots.forEach(([x, y]) => circle(px(x), px(y), Z * .5, '#fff', STRONG[c] + '55', 2, g));
+    poly(g, y.poly); g.fillStyle = COL[c]; g.fill();
+    poly(g, y.inner); g.fillStyle = '#fff'; g.fill(); g.strokeStyle = DARK[c]; g.lineWidth = 2; g.stroke();
+    y.spots.forEach(([x, y]) => circle(px(x), px(y), Z * .48, COL[c] + '33', COL[c], 2.5, g));
   });
-  HOME.forEach((h, c) => h.forEach(p => cell(p, PASTEL[c])));
-  TRACK.forEach((p, k) => cell(p, k % 13 === 0 ? PASTEL[k / 13] : '#fff'));
-  CENTER.forEach((t, c) => { poly(g, t); g.fillStyle = PASTEL[c]; g.fill(); });
-  g.fillStyle = '#b9b4cc'; g.font = `${Z * .6}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-  TRACK.forEach(([x, y], k) => k % 13 === 8 && g.fillText('★', px(x), px(y)));
+  HOME.forEach((h, c) => h.forEach(p => cell(p, COL[c])));
+  TRACK.forEach((p, k) => cell(p, k % 13 === 0 ? COL[k / 13] : '#fff'));
+  CENTER.forEach((t, c) => { poly(g, t); g.fillStyle = COL[c]; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); });
+  g.font = `${Z * .62}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  TRACK.forEach(([x, y], k) => {
+    if (k % 13 === 8) { g.fillStyle = '#9a92b8'; g.fillText('★', px(x), px(y)); }
+    if (k % 13 === 0) { g.fillStyle = '#ffffffcc'; g.fillText('★', px(x), px(y)); }
+  });
 }
 
-// Flat token: soft shadow, strong-colored disc, white rim, light center.
-function token(x, y, r, c) {
-  circle(x, y + r * .18, r, '#3d3a4f33');
-  circle(x, y, r, STRONG[c], '#fff', Math.max(2, r * .16));
-  circle(x, y, r * .42, PASTEL[c]);
+// A standing pawn: shadow, flared base, tapered body, round head with a shine.
+function pawn(x, y, r, c) {
+  const g = ctx, base = y + r * .55;
+  g.fillStyle = '#0004';
+  g.beginPath(); g.ellipse(x, base + r * .12, r * .78, r * .26, 0, 0, 7); g.fill();
+  const body = g.createLinearGradient(x - r, 0, x + r, 0);
+  body.addColorStop(0, LIGHT[c]); body.addColorStop(.35, COL[c]); body.addColorStop(1, DARK[c]);
+  g.beginPath();
+  g.moveTo(x - r * .72, base);
+  g.quadraticCurveTo(x - r * .74, base - r * .3, x - r * .42, base - r * .36);
+  g.quadraticCurveTo(x - r * .18, base - r * .55, x - r * .2, y - r * .25);
+  g.lineTo(x + r * .2, y - r * .25);
+  g.quadraticCurveTo(x + r * .18, base - r * .55, x + r * .42, base - r * .36);
+  g.quadraticCurveTo(x + r * .74, base - r * .3, x + r * .72, base);
+  g.ellipse(x, base, r * .72, r * .2, 0, 0, Math.PI);
+  g.closePath();
+  g.fillStyle = body; g.fill(); g.strokeStyle = shade(COL[c], .45); g.lineWidth = 1.5; g.stroke();
+  const head = g.createRadialGradient(x - r * .15, y - r * .62, r * .05, x, y - r * .48, r * .42);
+  head.addColorStop(0, '#fff'); head.addColorStop(.3, COL[c]); head.addColorStop(1, DARK[c]);
+  circle(x, y - r * .48, r * .38, head, shade(COL[c], .45), 1.5);
 }
 
 function draw(now) {
   if (N !== st.n) build(st.n);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(boardImg, 0, 0);
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const sx = (Math.random() - .5) * FX.shake, sy = (Math.random() - .5) * FX.shake;
+  FX.shake *= .88;
+  ctx.drawImage(boardImg, sx * DPR, sy * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, sx * DPR, sy * DPR);
   const mine = st.players[st.me], T = 13 * N - 2;
 
   // Your turn and not rolled yet: pulse your yard for up to 15 s.
   if (ready(st) && !busy && now < pulseUntil) {
-    const k = .5 + .5 * Math.sin(now / 180);
+    const k = .5 + .5 * Math.sin(now / 160);
     poly(ctx, YARDS[mine.color].poly);
-    ctx.fillStyle = `rgba(255,255,255,${.35 * k})`; ctx.fill();
-    ctx.strokeStyle = STRONG[mine.color]; ctx.globalAlpha = .4 + .6 * k; ctx.lineWidth = 3 + 4 * k; ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.fillStyle = `rgba(255,255,255,${.4 * k})`; ctx.fill();
+    ctx.shadowColor = COL[mine.color]; ctx.shadowBlur = 20 * k;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 + 5 * k; ctx.stroke();
+    ctx.shadowBlur = 0;
   }
 
   const canMove = !busy && st.me === st.turn && st.rolled && st.winner == null;
@@ -382,77 +642,40 @@ function draw(now) {
     (groups[x.toFixed(2) + ',' + y.toFixed(2)] ||= []).push({ c, i, p, x, y });
   }));
   hits = [];
-  for (const g of Object.values(groups)) g.forEach((k, j) => {
-    const x = px(k.x) + (j - (g.length - 1) / 2) * Z * .32, y = px(k.y);
-    const r = g.length > 1 ? Z * .32 : Z * .4;
+  const list = Object.values(groups).flatMap(g => g.map((k, j) => ({ ...k, n: g.length, j })));
+  list.sort((a, b) => a.y - b.y); // draw back to front so pawns overlap naturally
+  for (const k of list) {
+    let x = px(k.x) + (k.j - (k.n - 1) / 2) * Z * .34, y = px(k.y);
+    const r = k.n > 1 ? Z * .42 : Z * .56;
     const movable = canMove && k.c === mine.color && (k.p === -1 ? st.dice === 6 : k.p + st.dice <= T + 6);
-    if (movable) { // after rolling: pulsing dotted ring on every token you can move
-      ctx.setLineDash([4, 4]); ctx.lineDashOffset = -now / 25;
-      circle(x, y, r + 5 + 3 * Math.sin(now / 150), null, STRONG[k.c], 3);
+    if (movable) { // after rolling: pulsing dotted ring + bounce on every pawn you can move
+      ctx.setLineDash([5, 4]); ctx.lineDashOffset = -now / 25;
+      circle(x, y + r * .4, r * .9 + 3 * Math.sin(now / 150), COL[k.c] + '33', '#fff', 3);
       ctx.setLineDash([]);
       hits.push({ x, y, i: k.i });
+      y -= Math.abs(Math.sin(now / 200)) * Z * .18;
     }
-    token(x, y, r, k.c);
-  });
+    if (hop && hop.c === k.c && hop.i === k.i) y -= Math.sin(Math.min(1, (now - hop.t) / hop.ms) * Math.PI) * Z * .45;
+    pawn(x, y, r, k.c);
+  }
+  drawFX();
 }
 (function frame(now) { if (st?.started && disp) draw(now); requestAnimationFrame(frame); })(0);
 
-// ---------- voice chat (WebRTC mesh; the game server relays offers/answers) ----------
-// ponytail: STUN only, no TURN relay; some strict mobile/office networks won't connect. Add a TURN server if that bites.
-const ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
-const pcs = {}, audios = {}, mutedPeers = {};
+// ---------- voice chat (audio streams over the same peer connections) ----------
+const audios = {}, mutedPeers = {};
 let mic = null, inVoice = false, micMuted = false;
-const sig = (to, data) => act({ type: 'signal', to, data }, true);
-const gathered = pc => new Promise(r => {
-  if (pc.iceGatheringState === 'complete') return r();
-  pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r();
-  setTimeout(r, 3000);
-});
-
-function peer(j, offering) {
-  pcs[j]?.close();
-  const pc = pcs[j] = new RTCPeerConnection({ iceServers: ICE });
-  if (mic) mic.getTracks().forEach(t => pc.addTrack(t, mic));
-  else if (offering) pc.addTransceiver('audio', { direction: 'recvonly' });
-  pc.ontrack = e => {
-    const a = audios[j] ||= new Audio();
-    a.srcObject = e.streams[0] || new MediaStream([e.track]);
-    a.muted = !!mutedPeers[j];
-    a.play().catch(() => {});
-  };
-  return pc;
+// Others' audio plays only while you're in voice chat and haven't muted them.
+function syncAudio() {
+  for (const [peer, a] of Object.entries(audios)) { a.muted = !inVoice || !!mutedPeers[peer]; if (inVoice) a.play().catch(() => {}); }
 }
-async function call(j) {
-  const pc = peer(j, true);
-  await pc.setLocalDescription(await pc.createOffer());
-  await gathered(pc);
-  sig(j, pc.localDescription);
-}
-async function onSignal({ from, data }) {
-  if (!inVoice) return;
-  if (data.type === 'offer') {
-    const pc = peer(from, false);
-    await pc.setRemoteDescription(data);
-    await pc.setLocalDescription(await pc.createAnswer());
-    await gathered(pc);
-    sig(from, pc.localDescription);
-  } else if (data.type === 'answer') pcs[from]?.setRemoteDescription(data).catch(() => {});
-}
-function hangUp(j) {
-  pcs[j]?.close(); delete pcs[j];
-  if (audios[j]) { audios[j].srcObject = null; delete audios[j]; }
-}
-// Drop connections to anyone who left voice or the game.
-function syncVoice() {
-  for (const j in pcs) if (!st.players[j]?.voice || st.players[j].left) hangUp(j);
-}
-
 $('voice').onclick = async () => {
   try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch { mic = null; alert('Microphone not available, so you can listen but others will not hear you.'); }
   inVoice = true; micMuted = false;
-  await act({ type: 'voice', on: true });
-  st.players.forEach((p, j) => j !== st.me && p.voice && !p.left && call(j)); // newcomer calls everyone already in
+  if (mic) net.addStream(mic);
+  act({ type: 'voice', on: true });
+  syncAudio();
   render();
 };
 $('mic').onclick = () => {
@@ -462,10 +685,10 @@ $('mic').onclick = () => {
 };
 function leaveVoice() {
   if (!inVoice) return;
-  Object.keys(pcs).forEach(hangUp);
-  mic?.getTracks().forEach(t => t.stop());
+  if (mic) { net.removeStream(mic); mic.getTracks().forEach(t => t.stop()); }
   mic = null; inVoice = false;
-  act({ type: 'voice', on: false }, true);
+  act({ type: 'voice', on: false });
+  syncAudio();
   render();
 }
 $('unvoice').onclick = leaveVoice;
