@@ -74,6 +74,21 @@
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   td, th { padding: 6px 4px; text-align: left; border-bottom: 1px solid #ffffff1a; }
   th { color: var(--soft); font-weight: 600; }
+  #boardwrap { position: relative; line-height: 0; }
+  #tags, #fx { position: absolute; inset: 0; pointer-events: none; line-height: normal; }
+  /* name tag on each player's base */
+  .tag { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 1px; padding: 1px 2px 1px 8px;
+         border-radius: 99px; background: #fffffff2; color: var(--ink); font-size: 12px; font-weight: 800; white-space: nowrap;
+         box-shadow: 0 2px 6px #0005; border: 2px solid; pointer-events: auto; }
+  .tag.me { padding-right: 8px; }
+  .tag.off { opacity: .55; }
+  .tag .nm { max-width: 76px; overflow: hidden; text-overflow: ellipsis; margin-right: 3px; }
+  .tag .kc { font-weight: 700; color: #5a5470; margin-right: 2px; }
+  .tag button { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-size: 13px; background: none; box-shadow: none; }
+  .tag button:active { background: #0001; transform: none; }
+  /* emojis are page text, not canvas drawings, so every phone shows them in full color */
+  .fly { position: absolute; transform: translate(-50%, -50%); font-size: 38px; line-height: 1; pointer-events: none;
+         font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -133,7 +148,7 @@
   <div id="status"><span id="tdot" class="dot"></span><span id="turn"></span><span id="timer" class="hidden"></span></div>
   <div id="idlewarn"></div>
   <div id="msg"></div>
-  <canvas id="c" aria-label="Ludo board"></canvas>
+  <div id="boardwrap"><canvas id="c" aria-label="Ludo board"></canvas><div id="tags"></div><div id="fx"></div></div>
   <div id="bar">
     <button id="die" class="die" aria-label="Roll the die"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></button>
     <button id="emo" class="emo" aria-label="Send an emoji" aria-expanded="false">😊</button>
@@ -159,7 +174,7 @@
 // Peer-to-peer: the host's browser runs the rules (game.js) and sends each player their view of the game.
 // Players find each other through free public Nostr relays (via Trystero); the passcode encrypts that handshake.
 import { joinRoom, selfId, getRelaySockets } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm';
-import { newGame, handle, view, tick, MAX_IDLE } from './game.js';
+import { newGame, handle, view, tick, adopt, ordinal, MAX_IDLE } from './game.js';
 
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -178,6 +193,8 @@ const LIGHT = COL.map(c => '#' + [1, 3, 5].map(i => { const v = parseInt(c.slice
 
 // ---------- networking ----------
 const hostKey = code => 'ludoHost:' + code, passKey = code => 'ludoPass:' + code;
+const lastKey = code => 'ludoLast:' + code, seatKey = code => 'ludoSeat:' + code;
+let hostEpoch = 0;
 const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
 const livePeers = () => { const p = net?.getPeers() || {}; return p instanceof Map ? [...p.keys()] : Object.keys(p); };
 
@@ -209,7 +226,7 @@ async function connect() {
     },
   });
   actMsg = net.makeAction('act'); stateMsg = net.makeAction('state'); errMsg = net.makeAction('err'); emojiMsg = net.makeAction('emoji');
-  emojiMsg.onMessage = (e, { peerId }) => { const j = st?.players.findIndex(p => p.peer === peerId); if (j >= 0) showEmoji(j, e); };
+  emojiMsg.onMessage = (m, { peerId }) => { const j = st?.players.findIndex(p => p.peer === peerId); if (j >= 0) showEmoji(j, m?.e, m?.to); };
 
   net.onPeerJoin = peer => {
     if (isHost) stateMsg.send(view(g, ''), { target: peer }); // introduce ourselves as the host
@@ -227,9 +244,16 @@ async function connect() {
   };
   // Guest: state from the host. The first one (before we're a player) is the host saying hello: ask to join.
   stateMsg.onMessage = (s, { peerId }) => {
-    if (isHost) return;
+    if (isHost) {
+      if ((s.epoch || 0) <= (g.epoch || 0)) return;
+      stepDown(); // someone took over while we were away: carry on as a player
+    }
+    if ((s.epoch || 0) < hostEpoch) return; // an old host that hasn't noticed the handover yet
+    hostEpoch = s.epoch || 0;
     hostPeer = peerId; hostGone = false; lastHeard = Date.now();
-    if (s.me < 0) return void actMsg.send({ type: 'join', id, name: myName() }, { target: peerId });
+    const seat = parseInt(localStorage.getItem(seatKey(room)));
+    if (s.me < 0) return void actMsg.send({ type: 'join', id, name: myName(), seat: Number.isNaN(seat) ? undefined : seat }, { target: peerId });
+    if (s.started) { store(lastKey(room), JSON.stringify(s)); store(seatKey(room), s.me); } // for a host handover
     queue = queue.then(() => apply(s));
   };
   errMsg.onMessage = m => { alert(m); if (!st || st.me < 0) goHome(); };
@@ -256,12 +280,20 @@ function share() {
 // so reload the page: it rejoins with a fresh connection, straight back into our seat.
 let lastHeard = 0, reloading = false;
 function lostHost() {
-  if (reloading || st?.over || st?.winner != null) return; // game finished: nothing to come back to
+  if (reloading || st?.over || st?.done) return; // game finished: nothing to come back to
   reloading = hostGone = true;
   if (st) render();
   setTimeout(() => location.reload(), 1500);
 }
-setInterval(() => { if (isHost && g && tick(g)) share(); }, 1000); // host runs the turn clock
+// Host, every second: note who is connected (offline players are shown to all and their turns hurried),
+// then run the turn clock.
+setInterval(() => {
+  if (!isHost || !g?.started) return;
+  const live = livePeers(), was = g.players.map(p => p.online);
+  g.players.forEach((p, i) => { p.online = i === g.hostSeat || live.includes(p.peer); });
+  const changed = g.players.some((p, i) => p.online !== was[i]);
+  if (tick(g, Date.now(), i => g.players[i].online) || changed) share();
+}, 1000);
 setInterval(() => {
   if (isHost && g) sendViews();
   else if (st && Date.now() - lastHeard > 20000) lostHost(); // silent drop, e.g. a phone that slept
@@ -281,6 +313,15 @@ function enterRoom() {
   connect();
   $('ccode').textContent = room;
   show('connecting', true);
+  // If the host is gone for good, the next player in seat order takes over from the last state they saw
+  // (15 s, then 10 s more per place in line, in case the ones before them are gone too).
+  let last = null;
+  try { last = JSON.parse(localStorage.getItem(lastKey(room))); } catch {}
+  if (last?.started && !last.done && !last.over) {
+    const heirs = last.players.map((p, i) => i).filter(i => i !== last.hostSeat && !last.players[i].left);
+    const rank = heirs.indexOf(last.me);
+    if (rank >= 0) setTimeout(() => { if (!st) takeOver(last); }, 15000 + rank * 10000);
+  }
 }
 
 // Players find each other through these public Nostr relays (all from Trystero's own list, checked reachable),
@@ -304,13 +345,27 @@ function showConn() {
 }
 setInterval(showConn, 1000);
 
+function takeOver(last) {
+  isHost = true; hostGone = false;
+  g = adopt(last, id, selfId);
+  for (const peer of livePeers()) stateMsg.send(view(g, ''), { target: peer }); // tell everyone waiting who hosts now
+  share();
+}
+function stepDown() {
+  store(seatKey(room), g.players.findIndex(p => p.id === id)); // our seat, to reclaim from the new host
+  store(hostKey(room), null);
+  isHost = false; g = null;
+}
+
 function goHome() {
   net?.leave();
-  store(passKey(room), null); store(hostKey(room), null);
+  store(passKey(room), null); store(hostKey(room), null); store(lastKey(room), null); store(seatKey(room), null);
   location.href = location.pathname;
 }
 
 // ---------- local stats (this device only) ----------
+const medal = place => ['🥇', '🥈', '🥉'][place - 1] || ordinal(place);
+const placeResult = place => place === 1 ? 'won' : place ? ordinal(place) : 'lost';
 const loadStats = () => { try { return JSON.parse(localStorage.ludoStats) || null; } catch { return null; } } ;
 function recordGame(s, result) {
   const key = room + ':' + s.startedAt;
@@ -335,7 +390,7 @@ $('mystats').onclick = () => {
   $('hist').replaceChildren(...s.history.map(g => {
     const tr = document.createElement('tr');
     [new Date(g.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
-     { won: '🏆 Won', lost: 'Lost', left: 'Left', ended: 'Ended' }[g.result], g.players.join(', '), g.captures, Math.round(g.seconds / 60) + 'm']
+     { won: '🏆 Won', lost: 'Lost', left: 'Left', ended: 'Ended' }[g.result] || g.result, g.players.join(', '), g.captures, Math.round(g.seconds / 60) + 'm']
       .forEach(v => tr.append(Object.assign(document.createElement('td'), { textContent: v })));
     return tr;
   }));
@@ -404,11 +459,11 @@ $('share').onclick = async () => {
 $('start').onclick = () => act({ type: 'start' });
 $('die').onclick = () => { $('die').disabled = true; act({ type: 'roll' }); }; // disabled until the next state: no double rolls
 $('exit').onclick = async () => {
-  const live = st?.started && st.winner == null && !st.over;
+  const live = st?.started && !st.done && !st.over;
   if (isHost && live && !confirm("You're the host: leaving ends the game for everyone. Leave?")) return;
   if (!isHost && live && !confirm('Leave this game? Your tokens will be removed from the board.')) return;
   leaveVoice();
-  if (live) recordGame(st, 'left');
+  if (live) recordGame(st, st.players[st.me]?.place ? placeResult(st.players[st.me].place) : 'left');
   if (isHost) { g.over = true; g.msg = 'The host ended the game'; share(); }
   else act({ type: 'leave' });
   await sleep(400); // let the last message go out
@@ -501,7 +556,6 @@ function drawFX() {
     t.life -= .012; t.y -= .5;
     ctx.globalAlpha = Math.min(1, t.life * 2);
     ctx.font = `900 ${Math.round(42 * s)}px ui-rounded, system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (t.emoji) { t.y -= .9; ctx.fillText(t.text, t.x, t.y); continue; } // emojis: no outline, rise faster
     ctx.lineWidth = 8; ctx.strokeStyle = '#1b1147'; ctx.strokeText(t.text, t.x, t.y);
     ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y);
   }
@@ -511,7 +565,7 @@ function drawFX() {
 // ---------- applying server state, with animations ----------
 const PIPS = [[4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
 const face = d => [...$('die').children].forEach((el, i) => el.classList.toggle('on', PIPS[d - 1].includes(i)));
-const ready = s => s?.started && s.winner == null && !s.over && !hostGone && s.turn === s.me && !s.rolled;
+const ready = s => s?.started && !s.done && !s.over && !hostGone && s.turn === s.me && !s.rolled;
 
 // A pawn in motion follows a path of canvas points; draw() places it along that path.
 const HOP_MS = 220, HOP_GAP = 60; // per square: an arc of 0.22 s, then a short rest
@@ -580,13 +634,20 @@ async function apply(s) {
       await swoosh(v.c, v.i, v.a);
       burst(...at(v.c, -1, v.i), [COL[v.c], '#fff'], 14, 2);
     }
-    if (s.winner != null && prev.winner == null) { SFX.win(); confetti(); say(`${s.players[s.winner].name} WINS!`, '#ffc107', 300, 280, 1.1); }
+    // Someone brought all four pawns home: celebrate their place. The game plays on for the rest.
+    for (const j of s.places.slice(prev.places?.length || 0)) {
+      if (s.done && j === s.places.at(-1) && s.places.length > 1) continue; // the last place isn't a celebration
+      const pl = s.players[j], first = pl.place === 1;
+      first ? (SFX.win(), confetti()) : SFX.home();
+      say(first ? `${pl.name} WINS!` : `${pl.name} ${ordinal(pl.place)}!`, first ? '#ffc107' : COL[pl.color], 300, 280, 1.1);
+      await sleep(first ? 1200 : 600);
+    }
   }
   st = s; disp = s.tokens; busy = false;
   if (s.timeLeft != null) turnEndsAt = performance.now() + s.timeLeft;
   if (s.players[s.me]?.kicked) { alert('You were removed from the game for missing too many turns.'); return goHome(); }
   if (ready(s) && !ready(prev)) { SFX.turn(); pulseUntil = performance.now() + 15000; }
-  if (s.started && s.winner != null) recordGame(s, s.winner === s.me ? 'won' : 'lost');
+  if (s.started && s.done) recordGame(s, placeResult(s.players[s.me]?.place));
   else if (s.over) recordGame(s, 'ended');
   if (s.players[s.me]?.voice && !inVoice) act({ type: 'voice', on: false }); // a refresh dropped our voice connection
   render();
@@ -608,7 +669,8 @@ function render() {
     const dot = Object.assign(document.createElement('span'), { className: 'dot' });
     dot.style.background = st.started ? COL[p.color] : '#ffffff55';
     const name = Object.assign(document.createElement('span'), {
-      className: 'name', textContent: p.name + (j === 0 && !st.started ? ' (host)' : '') + (j === st.me ? ' – you' : '') + (p.left ? ' (left)' : '') });
+      className: 'name', textContent: p.name + (j === st.hostSeat ? ' (host)' : '') + (j === st.me ? ' – you' : '') + (p.left ? ' (left)' : '')
+        + (p.place ? ' ' + medal(p.place) : '') + (st.started && !p.online && !p.left ? ' 📴 offline' : '') });
     li.append(dot, name);
     if (st.started && p.captures) li.append(Object.assign(document.createElement('span'), { textContent: `💥${p.captures}`, title: 'Captures this game' }));
     if (p.voice) li.append(Object.assign(document.createElement('span'), { textContent: '🎙', title: 'In voice chat' }));
@@ -632,13 +694,16 @@ function render() {
     $('start').textContent = `Start now with ${st.players.length}`;
     return;
   }
-  const p = st.players[st.winner ?? st.turn];
+  const p = st.players[st.done ? st.places[0] : st.turn];
   $('tdot').style.background = COL[p.color];
-  $('turn').textContent = st.winner != null ? `🏆 ${p.name} wins!` : st.over ? 'Game over' : `${p.name}'s turn` + (st.me === st.turn ? ' (you)' : '');
+  $('turn').textContent = st.done ? `🏆 ${p.name} wins!` : st.over ? 'Game over' : `${p.name}'s turn` + (st.me === st.turn ? ' (you)' : '');
   $('msg').textContent = hostGone ? '⚠️ Lost the host. Waiting for them to come back…' : st.msg;
   face(st.dice || 6);
-  paintDie(st.winner ?? st.turn);
+  paintDie(st.done ? st.places[0] : st.turn);
+  if (st.done) $('msg').textContent = 'Final order: ' + st.places.map(j => `${ordinal(st.players[j].place)} ${st.players[j].name}`).join(' · ');
+  else if (st.players[st.me]?.place && !hostGone) $('msg').textContent = `You finished ${ordinal(st.players[st.me].place)}! ` + st.msg;
   $('die').disabled = !ready(st);
+  renderTags();
   const missed = st.players[st.me]?.idle || 0;
   $('idlewarn').textContent = missed && !isHost ? `⚠️ You've missed ${missed} turn${missed > 1 ? 's' : ''}. Miss ${MAX_IDLE + 1 - missed} more in a row and you'll be removed.` : '';
 }
@@ -646,7 +711,7 @@ function render() {
 // ---------- turn clock: countdown, last-5-seconds beeps, missed-turn warning ----------
 let turnEndsAt = 0, lastBeep = 0;
 setInterval(() => {
-  const on = st?.started && st.winner == null && !st.over && !hostGone;
+  const on = st?.started && !st.done && !st.over && !hostGone;
   show('timer', on);
   if (!on) return;
   const secs = Math.max(0, Math.ceil((turnEndsAt - performance.now()) / 1000));
@@ -658,29 +723,65 @@ setInterval(() => {
 // ---------- emojis: sent straight to everyone, never stored ----------
 const EMOJIS = ['👋', '👍', '👏', '🎲', '🤞', '🙏', '🔥', '🚀', '🎉', '🥳', '😎', '😏', '😈', '😂', '😱', '🤯', '😤', '😡', '😭', '💀'];
 const lastEmojiFrom = {};
-function showEmoji(j, e) {
-  if (!EMOJIS.includes(e) || !st?.started || !YARDS) return;
+let emojiTo = null; // player the next emoji is aimed at; null = just float it over my own base
+const yardCenter = j => { const s = YARDS[st.players[j].color].spots; return [px(s.reduce((a, p) => a + p[0], 0) / 4) / 6, px(s.reduce((a, p) => a + p[1], 0) / 4) / 6]; }; // in %
+function showEmoji(j, e, to) {
+  if (!EMOJIS.includes(e) || !st?.started || !YARDS || !st.players[j]) return;
   const now = performance.now();
   if (now - (lastEmojiFrom[j] || 0) < 1000) return; // ignore spam
   lastEmojiFrom[j] = now;
-  const spots = YARDS[st.players[j].color].spots, x = px(spots.reduce((a, p) => a + p[0], 0) / 4), y = px(spots.reduce((a, p) => a + p[1], 0) / 4);
-  FX.texts.push({ text: e, emoji: true, x, y, life: 1, big: 1.5 });
+  const el = Object.assign(document.createElement('span'), { className: 'fly', textContent: e });
+  $('fx').append(el);
+  const [x, y] = yardCenter(j), at = (x, y, s, o, offset) => ({ left: x + '%', top: y + '%', transform: `translate(-50%,-50%) scale(${s})`, opacity: o, offset });
+  const frames = Number.isInteger(to) && st.players[to] && to !== j
+    ? (([x2, y2]) => [at(x, y, .5, 0, 0), at(x, y, 1.2, 1, .12), at(x2, y2, 1.5, 1, .65), at(x2, y2, 1.1, 1, .85), at(x2, y2, 1, 0, 1)])(yardCenter(to))
+    : [at(x, y, .4, 0, 0), at(x, y, 1.5, 1, .2), at(x, y - 9, 1.1, 1, .75), at(x, y - 13, 1, 0, 1)];
+  el.animate(frames, { duration: 1900, easing: 'ease-out' }).onfinish = () => el.remove();
   SFX.pop();
+}
+function sendEmoji(e) {
+  if (performance.now() - (lastEmojiFrom[st.me] || 0) < 1500) return;
+  showEmoji(st.me, e, emojiTo);
+  emojiMsg.send({ e, to: emojiTo });
 }
 const pickEmojis = open => { show('emojis', open); $('emo').setAttribute('aria-expanded', open); };
 $('emojis').replaceChildren(...EMOJIS.map(e => {
   const b = Object.assign(document.createElement('button'), { textContent: e });
   b.setAttribute('role', 'menuitem');
-  b.onclick = () => {
-    pickEmojis(false);
-    if (performance.now() - (lastEmojiFrom[st.me] || 0) < 1500) return;
-    showEmoji(st.me, e);
-    emojiMsg.send(e);
-  };
+  b.onclick = () => { pickEmojis(false); sendEmoji(e); };
   return b;
 }));
-$('emo').onclick = ev => { ev.stopPropagation(); pickEmojis($('emojis').classList.contains('hidden')); };
+$('emo').onclick = ev => { ev.stopPropagation(); emojiTo = null; pickEmojis($('emojis').classList.contains('hidden')); };
 addEventListener('click', ev => { if (!$('emojis').contains(ev.target)) pickEmojis(false); });
+
+// ---------- name tags on each base ----------
+// Mine: name + kill count. Others': name, kill count, an emoji button aimed at them, and (in voice chat) a mute button.
+function tagSpot(c) {
+  const y = YARDS[c], I = y.spots.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4], [0, 0]);
+  if (N === 4) return [I[0], I[1] + (I[1] < 0 ? -2.5 : 2.5)]; // the colored band above (top bases) or below (bottom bases)
+  const [, b, d] = y.poly, M = [(b[0] + d[0]) / 2, (b[1] + d[1]) / 2], L = Math.hypot(M[0] - I[0], M[1] - I[1]);
+  return [M[0] + (I[0] - M[0]) * .3 / L, M[1] + (I[1] - M[1]) * .3 / L]; // just inside the outer edge of a triangular base
+}
+function renderTags() {
+  if (!st.started || !YARDS) return $('tags').replaceChildren();
+  const btn = (text, label, onclick) => { const b = Object.assign(document.createElement('button'), { textContent: text, onclick }); b.setAttribute('aria-label', label); return b; };
+  $('tags').replaceChildren(...st.players.flatMap((p, j) => {
+    if (p.left) return [];
+    const t = document.createElement('div'), [x, y] = tagSpot(p.color), mine = j === st.me;
+    t.className = 'tag' + (mine ? ' me' : '') + (p.online ? '' : ' off');
+    t.style.left = px(x) / 6 + '%'; t.style.top = px(y) / 6 + '%'; t.style.borderColor = COL[p.color];
+    t.append(Object.assign(document.createElement('span'), { className: 'nm', textContent: (p.place ? medal(p.place) + ' ' : '') + p.name + (p.online ? '' : ' 📴') }),
+             Object.assign(document.createElement('span'), { className: 'kc', textContent: `💥${p.captures}`, title: 'Captures this game' }));
+    if (!mine) {
+      t.append(btn('😊', `Send an emoji to ${p.name}`, ev => { ev.stopPropagation(); emojiTo = j; pickEmojis(true); }));
+      if (p.voice) {
+        const muted = !!mutedPeers[p.peer];
+        t.append(btn(muted ? '🔇' : '🔊', `${muted ? 'Unmute' : 'Mute'} ${p.name}'s voice for me`, () => { mutedPeers[p.peer] = !muted; syncAudio(); render(); }));
+      }
+    }
+    return [t];
+  }));
+}
 
 // ---------- board geometry ----------
 // In cell units around the center. n arms sit on the sides of a regular n-gon (n=4 is the classic
@@ -796,7 +897,7 @@ function draw(now) {
     ctx.shadowBlur = 0;
   }
 
-  const canMove = !busy && st.me === st.turn && st.rolled && st.winner == null;
+  const canMove = !busy && st.me === st.turn && st.rolled && !st.done;
   const groups = {};
   disp.forEach((t, c) => t && t.forEach((p, i) => {
     const [x, y] = spot(c, p, i);

@@ -10,7 +10,10 @@ Ad-free online Ludo for 2–6 friends, running entirely on GitHub Pages. No serv
   (its owner also hears an alert and their screen flashes), plus banners for SIX, HOME and the winner, with sounds and a volume slider.
 - 30 seconds per action, with a countdown. When time runs out the game plays the turn automatically;
   after more than 5 timed-out turns a player is removed (except the host, whose browser runs the game).
-- Never more than two sixes in a row.
+- Never more than two sixes in a row. A player stuck with every pawn in the yard is guaranteed a 6 on their 7th turn.
+- The game plays on after the winner: players finish 1st, 2nd, 3rd… until only one is left.
+- Name tags on each base show the player and their kills; other players' tags also have an emoji button (the emoji flies to them)
+  and, when they're in voice chat, a mute button for their voice.
 - 20 emojis to react with during the game (sent live, never saved).
 - Voice chat: mute your mic, mute any player, leave voice, or exit the game.
 - Stats (games, wins, captures, time played, recent games) are saved on each player's own device.
@@ -23,8 +26,10 @@ The connecting screen shows how many relays are reachable and, if a player can't
 The room passcode encrypts that handshake, so only people with the link or passcode can join.
 
 Things to know:
-- **The host must keep the game open.** If the host closes the page, the game ends for everyone.
-  If the host only refreshes, the game resumes where it was and everyone reconnects automatically.
+- **If the host drops out**, the next player takes over as host after about 15 seconds and the game carries on.
+  If the original host comes back, they rejoin as a normal player. A host refresh simply resumes the game.
+- **If a player drops out**, everyone sees them as offline and their turns are played for them after 10 seconds;
+  after more than 5 missed turns they're removed.
 - **Some networks block direct connections**: some mobile-data carriers and strict office or school Wi-Fi.
   Players on those networks can't connect; home Wi-Fi usually works. (Fixing this needs a TURN relay server, which isn't included.)
 - The host's browser rolls the dice, so a tech-savvy host could cheat. Fine among friends.
